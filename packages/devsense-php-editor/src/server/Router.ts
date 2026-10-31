@@ -33,6 +33,9 @@ export class Router {
   private pending = new Map<string | number, string>();
   // uri -> clientId (for routing diagnostics by URI)
   private uriToClient = new Map<string, string>();
+  // request id -> { resolve, reject } for promise-based requests
+  private pendingRequests = new Map<string | number, { resolve: (value: any) => void; reject: (err: Error) => void }>;
+  private nextRequestId = 1;
 
   constructor(ls: LspClient, ws: WsServer, options: RouterOptions = {}) {
     this.ls = ls;
@@ -95,6 +98,16 @@ export class Router {
         this.pending.delete(message.id);
         this.ws.sendTo(clientId, message);
       }
+      // Resolve any pending promise-based request.
+      const pending = this.pendingRequests.get(message.id);
+      if (pending) {
+        this.pendingRequests.delete(message.id);
+        if (message.error) {
+          pending.reject(new Error(`LS error ${message.error.code}: ${message.error.message}`));
+        } else {
+          pending.resolve(message.result);
+        }
+      }
       return;
     }
 
@@ -136,5 +149,24 @@ export class Router {
   /** Get the client id that owns a URI, if any. */
   getClientForUri(uri: string): string | undefined {
     return this.uriToClient.get(uri);
+  }
+
+  /**
+   * Send a JSON-RPC request to the language server and return a Promise
+   * that resolves with the result when the response arrives.
+   * Used by providers to make LSP requests and await responses.
+   */
+  sendRequest(method: string, params?: any): Promise<any> {
+    const id = this.nextRequestId++;
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+      const message = this.prepareClientMessage(null as any, {
+        jsonrpc: '2.0',
+        id,
+        method,
+        params,
+      });
+      this.ls.send(message);
+    });
   }
 }
