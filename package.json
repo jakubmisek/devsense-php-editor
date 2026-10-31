@@ -1,0 +1,16 @@
+{
+  "name": "devsense-php-editor-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Online PHP Editor monorepo",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/devsense-php-editor && npm run build -w packages/devsense-php-editor-sampleweb",
+    "dev": "npm run dev -w packages/devsense-php-editor-sampleweb"
+  },
+  "devDependencies": {
+    "monaco-editor": "^0.57.0"
+  }
+}

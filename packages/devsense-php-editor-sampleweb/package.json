@@ -1,0 +1,18 @@
+{
+  "name": "devsense-php-editor-sampleweb",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DEVSENSE PHP Editor Playground - sample web application",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "devsense-php-editor": "../devsense-php-editor"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "vite": "^7.3.5"
+  }
+}
