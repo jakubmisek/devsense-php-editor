@@ -12,6 +12,7 @@
     "devsense-php-editor": "../devsense-php-editor"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "typescript": "^5.8.2",
     "vite": "^7.3.5"
   }
