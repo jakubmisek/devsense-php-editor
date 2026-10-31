@@ -1,0 +1,37 @@
+{
+  "name": "devsense-php-editor",
+  "version": "1.0.0",
+  "description": "Devsense PHP Editor core - PhpEditor class managing a devsense-php-ls language server over WebSocket RPC",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "devsense-php-editor": "dist/index.js"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "devsense-php-ls": "^1.0.19468",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "esbuild": "^0.25.2",
+    "@types/node": "^22.20.5",
+    "@types/ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "DEVSENSE",
+  "license": "MIT",
+  "keywords": [
+    "php",
+    "language-server",
+    "lsp",
+    "devsense",
+    "editor",
+    "websocket"
+  ]
+}
