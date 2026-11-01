@@ -46,10 +46,13 @@ export class LsServer extends EventEmitter {
       const lsPath = Devsense.PHP.LS.languageServerPath();
       if (!lsPath) {
         const err = new Error('devsense.php.ls binary not found. Install devsense-php-ls platform package.');
+        console.error('[LsServer]', err.message);
         this.emit('error', err);
         reject(err);
         return;
       }
+
+      console.log('[LsServer] Spawning language server:', lsPath);
 
       const child = spawn(lsPath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -60,25 +63,38 @@ export class LsServer extends EventEmitter {
       this.proc = child;
 
       child.on('error', (err: Error) => {
+        console.error('[LsServer] Process error:', err.message);
         this.emit('error', err);
         reject(err);
       });
 
       child.on('exit', (code: number | null, signal: string | null) => {
+        console.log('[LsServer] Language server exited code=', code, 'signal=', signal);
         this.proc = null;
         this.client = null;
         this.emit('exit', code, signal);
       });
 
       this.client = new LspClient(child);
-      this.client.on('error', (err: Error) => this.emit('error', err));
-      this.client.on('stderr', (text: string) => this.emit('stderr', text));
+      this.client.on('error', (err: Error) => {
+        console.error('[LsServer] LspClient error:', err.message);
+        this.emit('error', err);
+      });
+      this.client.on('stderr', (text: string) => {
+        console.log('[LsServer] LS stderr:', text.trim());
+        this.emit('stderr', text);
+      });
+      this.client.on('message', (msg: any) => {
+        console.log('[LsServer] <- LS message:', msg.method || msg.id || 'response');
+      });
       this.client.on('exit', () => {
+        console.log('[LsServer] LspClient exit');
         this.proc = null;
         this.client = null;
       });
 
       // The client is ready to frame once stdout is attached.
+      console.log('[LsServer] Language server started');
       this.emit('started');
       resolve();
     });
@@ -102,10 +118,13 @@ export class LsServer extends EventEmitter {
   stop(): Promise<void> {
     return new Promise((resolve) => {
       if (!this.proc) {
+        console.log('[LsServer] No process to stop');
         resolve();
         return;
       }
+      console.log('[LsServer] Stopping language server process...');
       const onExit = () => {
+        console.log('[LsServer] Process stopped');
         this.proc = null;
         this.client = null;
         resolve();
@@ -115,8 +134,15 @@ export class LsServer extends EventEmitter {
       // Fallback resolve so stop() never hangs forever.
       setTimeout(() => {
         try { this.proc?.removeListener('exit', onExit); } catch { /* ignore */ }
+        console.log('[LsServer] Stop timeout reached');
         resolve();
       }, 3000);
     });
+  }
+
+  /** Send a raw JSON-RPC message to the LS (for logging/tracing). */
+  send(message: any): void {
+    console.log('[LsServer] -> LS message:', message.method || message.id || 'response');
+    this.client?.send(message);
   }
 }

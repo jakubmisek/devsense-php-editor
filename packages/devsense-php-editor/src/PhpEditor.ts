@@ -55,6 +55,8 @@ export class PhpEditor {
   async start(): Promise<number> {
     if (this.initialized) return this.getPort();
 
+    console.log('[PhpEditor] Starting...');
+
     // 1. Spawn the LS process.
     this.ls = new LsServer({
       cwd: this.options.cwd,
@@ -62,22 +64,28 @@ export class PhpEditor {
       logger: this.options.logger,
     });
     this.ls.on('error', (err) => {
+      console.error('[PhpEditor] LS error:', err.message);
       this.options.logger?.(`LS error: ${err.message}`);
     });
     this.ls.on('exit', (code, signal) => {
+      console.log('[PhpEditor] LS exited code=', code, 'signal=', signal);
       this.options.logger?.(`LS exited code=${code} signal=${signal}`);
       this.initialized = false;
     });
 
+    console.log('[PhpEditor] Spawning language server...');
     await this.ls.start();
     const client = this.ls.getClient();
     if (!client) {
       throw new Error('Failed to create LSP client for devsense-php-ls');
     }
 
+    console.log('[PhpEditor] LS client created, starting WebSocket server...');
+
     // 2. Start the WebSocket server.
     this.ws = new WsServer({ port: this.options.port, host: this.options.host });
     const port = await this.ws.start();
+    console.log('[PhpEditor] WebSocket server listening on ws://', this.options.host, ':', port);
     this.options.logger?.(`WebSocket server listening on ws://${this.options.host}:${port}`);
 
     // 3. Wire up the router between WS clients and the LS.
@@ -85,6 +93,7 @@ export class PhpEditor {
     const initializationOptions: Record<string, any> = {};
     if (licenseKey) {
       initializationOptions['0'] = licenseKey;
+      console.log('[PhpEditor] License key provided via initializationOptions');
     }
     if (this.options.initializationOptions) {
       Object.assign(initializationOptions, this.options.initializationOptions);
@@ -96,23 +105,28 @@ export class PhpEditor {
     this.ws.on('connection', (client) => {
       const workspace = new VirtualWorkspace(client.id);
       this.router!.registerUri(client.id, workspace.rootUri);
+      console.log('[PhpEditor] Client connected:', client.id, '(workspace', workspace.rootUri, ')');
       this.options.logger?.(`Client connected: ${client.id} (workspace ${workspace.rootUri})`);
     });
     this.ws.on('disconnect', (clientId) => {
+      console.log('[PhpEditor] Client disconnected:', clientId);
       this.options.logger?.(`Client disconnected: ${clientId}`);
     });
 
     this.initialized = true;
+    console.log('[PhpEditor] Started successfully on port', port);
     return port;
   }
 
   /** Stop the LS and WebSocket server (shutdown/exit handshake). */
   async stop(): Promise<void> {
     this.initialized = false;
+    console.log('[PhpEditor] Stopping...');
 
     // Graceful LS shutdown handshake: shutdown -> exit.
     const client = this.ls?.getClient();
     if (client && !client.isClosed()) {
+      console.log('[PhpEditor] Sending shutdown to LS...');
       try {
         client.send({ jsonrpc: '2.0', id: 0, method: 'shutdown', params: null });
         client.notify('exit');
@@ -122,12 +136,15 @@ export class PhpEditor {
     if (this.ws) {
       await this.ws.stop();
       this.ws = null;
+      console.log('[PhpEditor] WebSocket server stopped');
     }
     if (this.ls) {
       await this.ls.stop();
       this.ls = null;
+      console.log('[PhpEditor] Language server stopped');
     }
     this.router = null;
+    console.log('[PhpEditor] Stopped');
   }
 
   /** WebSocket port (0 if not started). */

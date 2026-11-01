@@ -1,5 +1,20 @@
-// src/providers/base.ts
-import { Position, Range } from "monaco-editor";
+// Browser-safe LSP providers for devsense-php-editor.
+//
+// These providers forward LSP requests through a WebSocket router to the
+// devsense-php-ls language server.
+//
+// IMPORTANT: This file does NOT import from 'monaco-editor' directly, because
+// sampleweb must NOT list monaco-editor as a direct dependency (it comes
+// transitively through devsense-php-editor). Instead, the Monaco API is
+// obtained from `window.monaco` (loaded via AMD loader from public/).
+//
+// The `monaco` object is passed into each provider's register(monaco) call,
+// and `window.monaco` is used for static enums/classes (Position, Range,
+// CompletionTriggerKind, SymbolKind, SymbolTag, InlayHintKind).
+
+// ---------------------------------------------------------------------------
+// BaseProvider
+// ---------------------------------------------------------------------------
 var BaseProvider = class {
   constructor(router, languageId, selector) {
     this.disposables = [];
@@ -7,20 +22,23 @@ var BaseProvider = class {
     this.languageId = languageId;
     this.selector = selector;
   }
-  /**
-   * Send an LSP request to devsense-php-ls and await the response.
-   */
+
+  /** Send an LSP request to devsense-php-ls and await the response. */
   async request(method, params) {
     return this.router.sendRequest(method, params);
   }
+
   /** Convert a Monaco Position to LSP position { line, character }. */
   toLspPosition(pos) {
     return { line: pos.lineNumber - 1, character: pos.column - 1 };
   }
+
   /** Convert an LSP position { line, character } to Monaco Position. */
   fromLspPosition(pos) {
-    return new Position(pos.line + 1, pos.character + 1);
+    const monaco = window.monaco;
+    return new monaco.Position(pos.line + 1, pos.character + 1);
   }
+
   /** Convert a Monaco Range to LSP range { start, end }. */
   toLspRange(range) {
     return {
@@ -28,24 +46,29 @@ var BaseProvider = class {
       end: this.toLspPosition({ lineNumber: range.endLineNumber, column: range.endColumn })
     };
   }
+
   /** Convert an LSP range to Monaco Range. */
   fromLspRange(range) {
-    return new Range(
+    const monaco = window.monaco;
+    return new monaco.Range(
       range.start.line + 1,
       range.start.character + 1,
       range.end.line + 1,
       range.end.character + 1
     );
   }
+
   /** Convert an LSP Location to Monaco Location. */
   fromLspLocation(loc) {
     return { uri: loc.uri, range: this.fromLspRange(loc.range) };
   }
+
   /** Register the Monaco provider and track its disposable. */
   register(monaco, registerFn) {
     const disp = registerFn(monaco);
     this.disposables.push(disp);
   }
+
   /** Dispose all registered Monaco providers. */
   dispose() {
     for (const d of this.disposables) {
@@ -58,27 +81,52 @@ var BaseProvider = class {
   }
 };
 
-// src/providers/CompletionProvider.ts
-import {
-  CompletionTriggerKind
-} from "monaco-editor";
+// ---------------------------------------------------------------------------
+// CompletionProvider
+// ---------------------------------------------------------------------------
 var CompletionProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       triggerCharacters: [".", ":", "$", "\\", "@", "#", "(", "[", '"', "'", "<", ">", "=", "+", "-", "*", "/"],
-      provideCompletionItems: (model, position, context, token) => {
+      provideCompletionItems: async (model, position, context, token) => {
+        console.log("[CompletionProvider] Sending textDocument/completion for", model.uri.toString(), "at line", position.lineNumber, "col", position.column);
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
           context: {
-            triggerKind: context.triggerKind ?? CompletionTriggerKind.Invoke,
+            triggerKind: context.triggerKind ?? 0,
             triggerCharacter: context.triggerCharacter
           }
         };
-        return { suggestions: [], incomplete: false };
+        try {
+          const result = await this.router.sendRequest("textDocument/completion", params);
+          console.log("[CompletionProvider] Got completion result:", result?.items?.length ?? 0, "items");
+          if (!result || !result.items || !Array.isArray(result.items)) {
+            return { suggestions: [], incomplete: false };
+          }
+          const suggestions = result.items.map((item) => ({
+            label: item.label,
+            kind: item.kind ?? 18,
+            detail: item.detail,
+            documentation: item.documentation,
+            insertText: item.insertText ?? item.label,
+            range: item.range ? this.fromLspRange(item.range) : void 0,
+            sortText: item.sortText,
+            filterText: item.filterText,
+            commitCharacters: item.commitCharacters,
+            additionalTextEdits: item.additionalTextEdits,
+            command: item.command,
+          }));
+          return { suggestions, incomplete: result.incomplete ?? false };
+        } catch (err) {
+          console.error("[CompletionProvider] Error:", err);
+          return { suggestions: [], incomplete: false };
+        }
       }
     };
     const disp = monaco.languages.registerCompletionItemProvider(this.selector, provider);
@@ -86,20 +134,26 @@ var CompletionProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/HoverProvider.ts
+// ---------------------------------------------------------------------------
+// HoverProvider
+// ---------------------------------------------------------------------------
 var HoverProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideHover: async (model, position, token) => {
+        console.log("[HoverProvider] Sending textDocument/hover for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position)
         };
         try {
           const result = await this.router.sendRequest("textDocument/hover", params);
+          console.log("[HoverProvider] Got hover result:", !!result?.contents);
           if (!result || !result.contents) return null;
           const contents = Array.isArray(result.contents) ? result.contents : [result.contents];
           const markdownContents = contents.map((c) => {
@@ -122,18 +176,23 @@ var HoverProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/SignatureHelpProvider.ts
+// ---------------------------------------------------------------------------
+// SignatureHelpProvider
+// ---------------------------------------------------------------------------
 var SignatureHelpProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
     this.triggerCharacters = options.triggerCharacters ?? ["(", ",", "<"];
     this.retriggerCharacters = options.retriggerCharacters ?? [",", ")"];
   }
+
   register(monaco) {
     const provider = {
       signatureHelpTriggerCharacters: this.triggerCharacters,
       signatureHelpRetriggerCharacters: this.retriggerCharacters,
       provideSignatureHelp: async (model, position, token, context) => {
+        console.log("[SignatureHelpProvider] Sending textDocument/signatureHelp for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
@@ -146,6 +205,7 @@ var SignatureHelpProvider = class extends BaseProvider {
         };
         try {
           const result = await this.router.sendRequest("textDocument/signatureHelp", params);
+          console.log("[SignatureHelpProvider] Got signature help:", !!result?.signatures?.length);
           if (!result || !result.signatures || result.signatures.length === 0) return null;
           const signatures = result.signatures.map((s) => ({
             label: s.label,
@@ -176,20 +236,26 @@ var SignatureHelpProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/DefinitionProvider.ts
+// ---------------------------------------------------------------------------
+// DefinitionProvider
+// ---------------------------------------------------------------------------
 var DefinitionProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideDefinition: async (model, position, token) => {
+        console.log("[DefinitionProvider] Sending textDocument/definition for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position)
         };
         try {
           const result = await this.router.sendRequest("textDocument/definition", params);
+          console.log("[DefinitionProvider] Got definition result:", result?.length ?? 0, "locations");
           if (!result) return null;
           const locations = Array.isArray(result) ? result : [result];
           return locations.map((loc) => this.fromLspLocation(loc));
@@ -204,14 +270,19 @@ var DefinitionProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/ReferencesProvider.ts
+// ---------------------------------------------------------------------------
+// ReferencesProvider
+// ---------------------------------------------------------------------------
 var ReferencesProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideReferences: async (model, position, context, token) => {
+        console.log("[ReferencesProvider] Sending textDocument/references for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
@@ -219,6 +290,7 @@ var ReferencesProvider = class extends BaseProvider {
         };
         try {
           const result = await this.router.sendRequest("textDocument/references", params);
+          console.log("[ReferencesProvider] Got references result:", result?.length ?? 0, "locations");
           if (!result || !Array.isArray(result)) return null;
           return result.map((loc) => this.fromLspLocation(loc));
         } catch (err) {
@@ -232,20 +304,25 @@ var ReferencesProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/DocumentSymbolProvider.ts
-import { SymbolKind, SymbolTag } from "monaco-editor";
+// ---------------------------------------------------------------------------
+// DocumentSymbolProvider
+// ---------------------------------------------------------------------------
 var DocumentSymbolProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideDocumentSymbols: async (model, token) => {
+        console.log("[DocumentSymbolProvider] Sending textDocument/documentSymbol for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() }
         };
         try {
           const result = await this.router.sendRequest("textDocument/documentSymbol", params);
+          console.log("[DocumentSymbolProvider] Got document symbols:", result?.length ?? 0, "symbols");
           if (!result || !Array.isArray(result)) return null;
           return result.map((s) => this.toDocumentSymbol(s));
         } catch (err) {
@@ -257,6 +334,7 @@ var DocumentSymbolProvider = class extends BaseProvider {
     const disp = monaco.languages.registerDocumentSymbolProvider(this.selector, provider);
     this.disposables.push(disp);
   }
+
   toDocumentSymbol(s) {
     const kind = this.toSymbolKind(s.kind);
     return {
@@ -270,50 +348,59 @@ var DocumentSymbolProvider = class extends BaseProvider {
       children: s.children ? s.children.map((c) => this.toDocumentSymbol(c)) : void 0
     };
   }
+
   toSymbolKind(k) {
+    const monaco = window.monaco;
     const map = {
-      1: SymbolKind.File,
-      2: SymbolKind.Module,
-      3: SymbolKind.Namespace,
-      4: SymbolKind.Package,
-      5: SymbolKind.Class,
-      6: SymbolKind.Method,
-      7: SymbolKind.Property,
-      8: SymbolKind.Field,
-      9: SymbolKind.Constructor,
-      10: SymbolKind.Enum,
-      11: SymbolKind.Interface,
-      12: SymbolKind.Function,
-      13: SymbolKind.Variable,
-      14: SymbolKind.Constant,
-      15: SymbolKind.String,
-      16: SymbolKind.Number,
-      17: SymbolKind.Boolean,
-      18: SymbolKind.Array,
-      19: SymbolKind.Object,
-      20: SymbolKind.Key,
-      21: SymbolKind.Null,
-      22: SymbolKind.EnumMember,
-      23: SymbolKind.Struct,
-      24: SymbolKind.Event,
-      25: SymbolKind.Operator,
-      26: SymbolKind.TypeParameter
+      1: monaco.SymbolKind.File,
+      2: monaco.SymbolKind.Module,
+      3: monaco.SymbolKind.Namespace,
+      4: monaco.SymbolKind.Package,
+      5: monaco.SymbolKind.Class,
+      6: monaco.SymbolKind.Method,
+      7: monaco.SymbolKind.Property,
+      8: monaco.SymbolKind.Field,
+      9: monaco.SymbolKind.Constructor,
+      10: monaco.SymbolKind.Enum,
+      11: monaco.SymbolKind.Interface,
+      12: monaco.SymbolKind.Function,
+      13: monaco.SymbolKind.Variable,
+      14: monaco.SymbolKind.Constant,
+      15: monaco.SymbolKind.String,
+      16: monaco.SymbolKind.Number,
+      17: monaco.SymbolKind.Boolean,
+      18: monaco.SymbolKind.Array,
+      19: monaco.SymbolKind.Object,
+      20: monaco.SymbolKind.Key,
+      21: monaco.SymbolKind.Null,
+      22: monaco.SymbolKind.EnumMember,
+      23: monaco.SymbolKind.Struct,
+      24: monaco.SymbolKind.Event,
+      25: monaco.SymbolKind.Operator,
+      26: monaco.SymbolKind.TypeParameter
     };
-    return map[k] ?? SymbolKind.Function;
+    return map[k] ?? monaco.SymbolKind.Function;
   }
+
   toSymbolTag(t) {
-    return t === 1 ? SymbolTag.Deprecated : SymbolTag.Deprecated;
+    const monaco = window.monaco;
+    return t === 1 ? monaco.SymbolTag.Deprecated : monaco.SymbolTag.Deprecated;
   }
 };
 
-// src/providers/CodeActionProvider.ts
+// ---------------------------------------------------------------------------
+// CodeActionProvider
+// ---------------------------------------------------------------------------
 var CodeActionProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideCodeActions: async (model, range, context, token) => {
+        console.log("[CodeActionProvider] Sending textDocument/codeAction for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           range: this.toLspRange(range),
@@ -330,6 +417,7 @@ var CodeActionProvider = class extends BaseProvider {
         };
         try {
           const result = await this.router.sendRequest("textDocument/codeAction", params);
+          console.log("[CodeActionProvider] Got code actions:", result?.length ?? 0, "actions");
           if (!result || !Array.isArray(result)) return null;
           return result.map((a) => ({
             title: a.title,
@@ -351,14 +439,19 @@ var CodeActionProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/FormattingProvider.ts
+// ---------------------------------------------------------------------------
+// FormattingProvider
+// ---------------------------------------------------------------------------
 var FormattingProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideDocumentFormattingEdits: async (model, options, token) => {
+        console.log("[FormattingProvider] Sending textDocument/formatting for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           options: {
@@ -368,6 +461,7 @@ var FormattingProvider = class extends BaseProvider {
         };
         try {
           const result = await this.router.sendRequest("textDocument/formatting", params);
+          console.log("[FormattingProvider] Got formatting edits:", result?.length ?? 0, "edits");
           if (!result || !Array.isArray(result)) return null;
           return result.map((e) => ({
             range: this.fromLspRange(e.range),
@@ -384,14 +478,19 @@ var FormattingProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/RangeFormattingProvider.ts
+// ---------------------------------------------------------------------------
+// RangeFormattingProvider
+// ---------------------------------------------------------------------------
 var RangeFormattingProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideDocumentRangeFormattingEdits: async (model, range, options, token) => {
+        console.log("[RangeFormattingProvider] Sending textDocument/rangeFormatting for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           range: this.toLspRange(range),
@@ -402,6 +501,7 @@ var RangeFormattingProvider = class extends BaseProvider {
         };
         try {
           const result = await this.router.sendRequest("textDocument/rangeFormatting", params);
+          console.log("[RangeFormattingProvider] Got range formatting edits:", result?.length ?? 0, "edits");
           if (!result || !Array.isArray(result)) return null;
           return result.map((e) => ({
             range: this.fromLspRange(e.range),
@@ -418,16 +518,21 @@ var RangeFormattingProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/OnTypeFormattingProvider.ts
+// ---------------------------------------------------------------------------
+// OnTypeFormattingProvider
+// ---------------------------------------------------------------------------
 var OnTypeFormattingProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
     this.autoFormatTriggerCharacters = options.autoFormatTriggerCharacters ?? ["}", ")", ";"];
   }
+
   register(monaco) {
     const provider = {
       autoFormatTriggerCharacters: this.autoFormatTriggerCharacters,
       provideOnTypeFormattingEdits: async (model, position, ch, options, token) => {
+        console.log("[OnTypeFormattingProvider] Sending textDocument/onTypeFormatting for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
@@ -439,6 +544,7 @@ var OnTypeFormattingProvider = class extends BaseProvider {
         };
         try {
           const result = await this.router.sendRequest("textDocument/onTypeFormatting", params);
+          console.log("[OnTypeFormattingProvider] Got on-type formatting edits:", result?.length ?? 0, "edits");
           if (!result || !Array.isArray(result)) return null;
           return result.map((e) => ({
             range: this.fromLspRange(e.range),
@@ -455,21 +561,27 @@ var OnTypeFormattingProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/SemanticTokensProvider.ts
+// ---------------------------------------------------------------------------
+// SemanticTokensProvider
+// ---------------------------------------------------------------------------
 var SemanticTokensProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
     this.legend = options.legend;
   }
+
   register(monaco) {
     const provider = {
       getLegend: () => this.legend,
       provideDocumentSemanticTokens: async (model, lastResultId, token) => {
+        console.log("[SemanticTokensProvider] Sending textDocument/semanticTokens/full for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() }
         };
         try {
           const result = await this.router.sendRequest("textDocument/semanticTokens/full", params);
+          console.log("[SemanticTokensProvider] Got semantic tokens:", result?.data?.length ?? 0, "tokens");
           if (!result) return null;
           return {
             resultId: result.resultId,
@@ -486,20 +598,26 @@ var SemanticTokensProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/InlineCompletionProvider.ts
+// ---------------------------------------------------------------------------
+// InlineCompletionProvider
+// ---------------------------------------------------------------------------
 var InlineCompletionProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideInlineCompletions: async (model, position, context, token) => {
+        console.log("[InlineCompletionProvider] Sending textDocument/inlineCompletion for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position)
         };
         try {
           const result = await this.router.sendRequest("textDocument/inlineCompletion", params);
+          console.log("[InlineCompletionProvider] Got inline completions:", result?.items?.length ?? 0, "items");
           if (!result || !result.items || !Array.isArray(result.items)) return null;
           return {
             items: result.items.map((item) => ({
@@ -520,21 +638,26 @@ var InlineCompletionProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/InlayHintsProvider.ts
-import { InlayHintKind } from "monaco-editor";
+// ---------------------------------------------------------------------------
+// InlayHintsProvider
+// ---------------------------------------------------------------------------
 var InlayHintsProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideInlayHints: async (model, range, token) => {
+        console.log("[InlayHintsProvider] Sending textDocument/inlayHint for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           range: this.toLspRange(range)
         };
         try {
           const result = await this.router.sendRequest("textDocument/inlayHint", params);
+          console.log("[InlayHintsProvider] Got inlay hints:", result?.length ?? 0, "hints");
           if (!result || !Array.isArray(result)) return null;
           return {
             hints: result.map((h) => ({
@@ -545,7 +668,7 @@ var InlayHintsProvider = class extends BaseProvider {
                 text: e.text
               })) : void 0,
               position: this.fromLspPosition(h.position),
-              kind: h.kind === 1 ? InlayHintKind.Type : InlayHintKind.Parameter,
+              kind: h.kind === 1 ? window.monaco.InlayHintKind.Type : window.monaco.InlayHintKind.Parameter,
               paddingLeft: h.paddingLeft,
               paddingRight: h.paddingRight
             })),
@@ -563,19 +686,25 @@ var InlayHintsProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/CodeLensProvider.ts
+// ---------------------------------------------------------------------------
+// CodeLensProvider
+// ---------------------------------------------------------------------------
 var CodeLensProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideCodeLenses: async (model, token) => {
+        console.log("[CodeLensProvider] Sending textDocument/codeLens for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() }
         };
         try {
           const result = await this.router.sendRequest("textDocument/codeLens", params);
+          console.log("[CodeLensProvider] Got code lenses:", result?.length ?? 0, "lenses");
           if (!result || !Array.isArray(result)) return null;
           return {
             lenses: result.map((l) => ({
@@ -597,14 +726,19 @@ var CodeLensProvider = class extends BaseProvider {
   }
 };
 
-// src/providers/RenameProvider.ts
+// ---------------------------------------------------------------------------
+// RenameProvider
+// ---------------------------------------------------------------------------
 var RenameProvider = class extends BaseProvider {
   constructor(router, options) {
     super(router, options.languageId, options.selector);
+    this.monaco = options.monaco;
   }
+
   register(monaco) {
     const provider = {
       provideRenameEdits: async (model, position, newName, token) => {
+        console.log("[RenameProvider] Sending textDocument/rename for", model.uri.toString());
         const params = {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
@@ -612,6 +746,7 @@ var RenameProvider = class extends BaseProvider {
         };
         try {
           const result = await this.router.sendRequest("textDocument/rename", params);
+          console.log("[RenameProvider] Got rename result:", !!result);
           return result;
         } catch (err) {
           console.error("RenameProvider error:", err);
@@ -623,6 +758,7 @@ var RenameProvider = class extends BaseProvider {
     this.disposables.push(disp);
   }
 };
+
 export {
   BaseProvider,
   CodeActionProvider,

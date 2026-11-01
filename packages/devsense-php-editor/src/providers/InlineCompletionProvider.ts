@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface InlineCompletionProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class InlineCompletionProvider extends BaseProvider {
@@ -22,8 +23,10 @@ export class InlineCompletionProvider extends BaseProvider {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
         };
+        console.log('[InlineCompletionProvider] Sending textDocument/inlineCompletion for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/inlineCompletion', params);
+          console.log('[InlineCompletionProvider] Got inline completions:', result?.items?.length ?? 0, 'items');
           if (!result || !result.items || !Array.isArray(result.items)) return null;
           return {
             items: result.items.map((item: any) => ({

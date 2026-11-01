@@ -2,7 +2,7 @@
  * Monaco Editor setup + LSP provider wiring.
  *
  * Monaco Editor is injected via the constructor (loaded via AMD loader
- * from /public/monaco-editor/ in index.html), not imported directly.
+ * from /monaco-editor/ in index.html), not imported directly.
  * This keeps monaco-editor as a browser-loaded dependency, not a bundled one.
  */
 import { WsClient } from './ws-client';
@@ -45,20 +45,41 @@ export class PhpEditorUI {
   private providers: Array<{ dispose(): void }> = [];
   private virtualDocUri: string = '';
   private readonly monaco: any;
+  private wsConnected = false;
 
   constructor(opts: EditorOptions) {
     this.monaco = opts.monaco;
     this.ws = new WsClient(opts.wsUrl);
     this.diagnostics = new DiagnosticsPanel();
     this.theme = new ThemeManager();
+    console.log('[editor] PhpEditorUI created, WS URL:', opts.wsUrl);
+    // Connect to WS non-blocking; editor creation should not depend on WS.
+    this.ws.connect().then(() => {
+      this.wsConnected = true;
+      console.log('[editor] WebSocket connected');
+      this.ws.setOnMessage((message) => {
+        console.log('[editor] <- Server message:', message.method || message.id || 'response');
+        this.handleServerMessage(message);
+      });
+      // Re-send didOpen now that we're connected
+      if (this.model) {
+        this.ws.sendNotification('textDocument/didOpen', {
+          textDocument: {
+            uri: this.virtualDocUri,
+            languageId: 'php',
+            version: 1,
+            text: this.model?.getValue() ?? '',
+          },
+        });
+        console.log('[editor] Re-sent textDocument/didOpen after WS connect');
+      }
+    }).catch((err) => {
+      console.warn('[editor] WebSocket connection failed (editor will still work without LSP):', err.message);
+    });
     this.init(opts.containerId, opts.initialContent);
   }
 
   private async init(containerId: string, initialContent?: string): Promise<void> {
-    await this.ws.connect();
-
-    this.ws.setOnMessage((message) => this.handleServerMessage(message));
-
     const container = document.getElementById(containerId);
     if (!container) throw new Error(`Container #${containerId} not found`);
 
@@ -77,8 +98,6 @@ export class PhpEditorUI {
     this.monaco.languages.register({ id: 'php', extensions: ['.php'], aliases: ['PHP'] });
 
     // Create virtual document model with untitled-workspace schema.
-    // The real client id is assigned by the server; we'll learn it after
-    // initialize and recreate the model with the correct URI.
     this.model = this.monaco.editor.createModel(
       initialContent ?? '<?php\n\n// Hello from DEVSENSE PHP Editor\n',
       'php',
@@ -93,15 +112,22 @@ export class PhpEditorUI {
     this.registerProviders();
 
     this.editor.onDidChangeModelContent((e: any) => {
-      this.ws.sendNotification('textDocument/didChange', {
-        textDocument: { uri: this.virtualDocUri, version: this.model?.getVersionId() ?? 0 },
-        contentChanges: [{ text: this.model?.getValue() ?? '' }],
-      });
+      console.log('[editor] Model content changed');
+      if (this.wsConnected) {
+        this.ws.sendNotification('textDocument/didChange', {
+          textDocument: { uri: this.virtualDocUri, version: this.model?.getVersionId() ?? 0 },
+          contentChanges: [{ text: this.model?.getValue() ?? '' }],
+        });
+      }
     });
   }
 
   private async performInitialize(): Promise<void> {
     console.log('[editor] Sending initialize to WS server...');
+    if (!this.wsConnected) {
+      console.warn('[editor] WS not connected, skipping initialize');
+      return;
+    }
     const result = await this.ws.sendRequest('initialize', {
       processId: 1,
       rootUri: null,
@@ -130,14 +156,19 @@ export class PhpEditorUI {
     console.log('[editor] Initialize result:', result);
 
     this.ws.sendNotification('initialized', {});
-    this.ws.sendNotification('textDocument/didOpen', {
-      textDocument: {
-        uri: this.virtualDocUri,
-        languageId: 'php',
-        version: 1,
-        text: this.model?.getValue() ?? '',
-      },
-    });
+    console.log('[editor] Sent initialized notification');
+
+    if (this.model) {
+      this.ws.sendNotification('textDocument/didOpen', {
+        textDocument: {
+          uri: this.virtualDocUri,
+          languageId: 'php',
+          version: 1,
+          text: this.model?.getValue() ?? '',
+        },
+      });
+      console.log('[editor] Sent textDocument/didOpen for', this.virtualDocUri);
+    }
   }
 
   private registerProviders(): void {
@@ -146,21 +177,21 @@ export class PhpEditorUI {
     const lang = this.monaco.languages;
 
     const providers = [
-      new CompletionProvider(ws, { selector, languageId: 'php' }),
-      new HoverProvider(ws, { selector, languageId: 'php' }),
-      new SignatureHelpProvider(ws, { selector, languageId: 'php', triggerCharacters: ['(', ',', '<'] }),
-      new DefinitionProvider(ws, { selector, languageId: 'php' }),
-      new ReferencesProvider(ws, { selector, languageId: 'php' }),
-      new DocumentSymbolProvider(ws, { selector, languageId: 'php' }),
-      new CodeActionProvider(ws, { selector, languageId: 'php' }),
-      new FormattingProvider(ws, { selector, languageId: 'php' }),
-      new RangeFormattingProvider(ws, { selector, languageId: 'php' }),
-      new OnTypeFormattingProvider(ws, { selector, languageId: 'php', autoFormatTriggerCharacters: ['}', ')', ';'] }),
-      new SemanticTokensProvider(ws, { selector, languageId: 'php', legend: { tokenTypes: [], tokenModifiers: [] } }),
-      new InlineCompletionProvider(ws, { selector, languageId: 'php' }),
-      new InlayHintsProvider(ws, { selector, languageId: 'php' }),
-      new CodeLensProvider(ws, { selector, languageId: 'php' }),
-      new RenameProvider(ws, { selector, languageId: 'php' }),
+      new CompletionProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new HoverProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new SignatureHelpProvider(ws, { selector, languageId: 'php', monaco: this.monaco, triggerCharacters: ['(', ',', '<'] }),
+      new DefinitionProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new ReferencesProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new DocumentSymbolProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new CodeActionProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new FormattingProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new RangeFormattingProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new OnTypeFormattingProvider(ws, { selector, languageId: 'php', monaco: this.monaco, autoFormatTriggerCharacters: ['}', ')', ';'] }),
+      new SemanticTokensProvider(ws, { selector, languageId: 'php', monaco: this.monaco, legend: { tokenTypes: [], tokenModifiers: [] } }),
+      new InlineCompletionProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new InlayHintsProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new CodeLensProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
+      new RenameProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
     ];
 
     for (const p of providers) {

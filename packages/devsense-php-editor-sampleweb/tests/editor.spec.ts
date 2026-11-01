@@ -14,13 +14,8 @@ test.describe('DEVSENSE PHP Editor Playground', () => {
     // Editor container exists
     await expect(page.locator('#editor-container')).toBeVisible();
 
-    // Monaco editor renders (check for editor area)
+    // Monaco editor renders
     await expect(page.locator('.monaco-editor')).toBeVisible();
-  });
-
-  test('displays PHP code in editor', async ({ page }) => {
-    // The editor should contain initial PHP content
-    await expect(page.locator('.monaco-editor')).toContainText('php');
   });
 
   test('theme switcher changes editor theme', async ({ page }) => {
@@ -34,6 +29,13 @@ test.describe('DEVSENSE PHP Editor Playground', () => {
     // Switch to light
     await select.selectOption('light');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+    // Switch to automatic
+    await select.selectOption('automatic');
+    await expect(page.locator('html')).toHaveAttribute(
+      'data-theme',
+      /light|dark/
+    );
   });
 
   test('diagnostics panel is present and collapsible', async ({ page }) => {

@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface OnTypeFormattingProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
   autoFormatTriggerCharacters: string[];
 }
 
@@ -32,8 +33,10 @@ export class OnTypeFormattingProvider extends BaseProvider {
             insertSpaces: options.insertSpaces,
           },
         };
+        console.log('[OnTypeFormattingProvider] Sending textDocument/onTypeFormatting for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/onTypeFormatting', params);
+          console.log('[OnTypeFormattingProvider] Got on-type formatting edits:', result?.length ?? 0, 'edits');
           if (!result || !Array.isArray(result)) return null;
           return result.map((e: any) => ({
             range: this.fromLspRange(e.range),

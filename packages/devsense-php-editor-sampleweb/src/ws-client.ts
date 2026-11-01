@@ -18,18 +18,27 @@ export class WsClient {
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
+      console.log('[WsClient] Connecting to', this.url);
       this.socket = new WebSocket(this.url);
-      this.socket.onopen = () => resolve();
-      this.socket.onerror = (err) => reject(err);
+      this.socket.onopen = () => {
+        console.log('[WsClient] Connected to', this.url);
+        resolve();
+      };
+      this.socket.onerror = (err) => {
+        console.error('[WsClient] Connection error to', this.url, err);
+        reject(err);
+      };
       this.socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          console.log('[WsClient] <- Server:', message.method || message.id || 'response');
           this.handleMessage(message);
         } catch {
           // ignore non-JSON
         }
       };
       this.socket.onclose = () => {
+        console.log('[WsClient] Disconnected from', this.url);
         this.socket = null;
         this.onClose?.();
       };

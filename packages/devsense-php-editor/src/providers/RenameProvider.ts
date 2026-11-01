@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface RenameProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class RenameProvider extends BaseProvider {
@@ -23,8 +24,10 @@ export class RenameProvider extends BaseProvider {
           position: this.toLspPosition(position),
           newName,
         };
+        console.log('[RenameProvider] Sending textDocument/rename for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/rename', params);
+          console.log('[RenameProvider] Got rename result:', !!result);
           return result;
         } catch (err) {
           console.error('RenameProvider error:', err);

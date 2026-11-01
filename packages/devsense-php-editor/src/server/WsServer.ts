@@ -58,22 +58,28 @@ export class WsServer extends EventEmitter {
         const client: WsClient = { id, socket };
         this.clients.set(id, client);
 
+        console.log('[WsServer] Client connected:', id, '(total:', this.clients.size + ')');
+
         socket.on('message', (raw: Buffer | string) => {
           let data: any;
           try {
             data = JSON.parse(raw.toString('utf8'));
+            console.log('[WsServer] <- Client', id, ':', data.method || data.id || 'response');
           } catch {
             data = { raw: raw.toString('utf8') };
+            console.log('[WsServer] <- Client', id, ': <non-JSON>');
           }
           this.emit('message', client, data);
         });
 
         socket.on('close', () => {
+          console.log('[WsServer] Client disconnected:', id);
           this.clients.delete(id);
           this.emit('disconnect', id);
         });
 
         socket.on('error', (err: Error) => {
+          console.error('[WsServer] Client', id, 'error:', err.message);
           this.emit('error', err);
         });
 

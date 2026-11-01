@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface ReferencesProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class ReferencesProvider extends BaseProvider {
@@ -23,8 +24,10 @@ export class ReferencesProvider extends BaseProvider {
           position: this.toLspPosition(position),
           context: { includeDeclaration: context.includeDeclaration ?? true },
         };
+        console.log('[ReferencesProvider] Sending textDocument/references for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/references', params);
+          console.log('[ReferencesProvider] Got references result:', result?.length ?? 0, 'locations');
           if (!result || !Array.isArray(result)) return null;
           return result.map((loc: any) => this.fromLspLocation(loc));
         } catch (err) {

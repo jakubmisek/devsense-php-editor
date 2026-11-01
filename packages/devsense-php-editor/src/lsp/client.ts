@@ -82,6 +82,7 @@ export class LspClient extends EventEmitter {
     if (this.closed || !this.proc.stdin) return;
     const body = Buffer.from(JSON.stringify(message), 'utf8');
     const header = `Content-Length: ${body.length}\r\n\r\n`;
+    console.log('[LspClient] -> LS:', message.method || message.id || 'response');
     this.proc.stdin.write(Buffer.concat([Buffer.from(header, 'ascii'), body]));
   }
 

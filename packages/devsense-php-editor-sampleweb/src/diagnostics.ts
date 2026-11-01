@@ -2,7 +2,6 @@
  * Diagnostics panel: bottom collapsible panel showing current virtual
  * document diagnostics (errors/warnings routed from devsense-php-ls via WS).
  */
-import { IMarkerData } from 'monaco-editor';
 
 export interface DiagnosticMarker {
   uri: string;
@@ -20,7 +19,7 @@ export class DiagnosticsPanel {
   private container: HTMLElement;
   private list: HTMLElement;
   private header: HTMLElement;
-  private collapsed = true;
+  private collapsed = false;
   private markersByUri = new Map<string, DiagnosticMarker[]>();
 
   constructor(containerId = 'diagnostics-panel') {

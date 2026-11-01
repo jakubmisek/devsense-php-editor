@@ -54,6 +54,8 @@ export class Router {
     const message = this.prepareClientMessage(client, data);
     if (!message) return;
 
+    console.log('[Router] Client', client.id, '-> LS:', message.method || message.id || 'response');
+
     // Track requests so we can route the response back to this client.
     if (message.method && message.id != null) {
       this.pending.set(message.id, client.id);
@@ -113,6 +115,7 @@ export class Router {
 
     // Notification -> route by method.
     if (message.method) {
+      console.log('[Router] LS -> notification:', message.method);
       this.handleLsNotification(message);
       return;
     }
@@ -124,20 +127,24 @@ export class Router {
 
     if (method === 'textDocument/publishDiagnostics') {
       const uri = params.textDocument?.uri;
+      console.log('[Router] Diagnostics for URI:', uri, 'diagnostics:', params.diagnostics?.length ?? 0);
       if (uri) {
         this.uriToClient.set(uri, params._clientId || this.uriToClient.get(uri) || '');
       }
       const clientId = uri ? this.uriToClient.get(uri) : undefined;
       if (clientId) {
+        console.log('[Router] Routing diagnostics to client:', clientId);
         this.ws.sendTo(clientId, message);
       } else {
         // No owning client yet: broadcast.
+        console.log('[Router] No owning client for URI, broadcasting diagnostics');
         this.ws.broadcast(message);
       }
       return;
     }
 
     // All other LS notifications: broadcast to all clients.
+    console.log('[Router] Broadcasting notification:', method);
     this.ws.broadcast(message);
   }
 

@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface CodeActionProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class CodeActionProvider extends BaseProvider {
@@ -32,8 +33,10 @@ export class CodeActionProvider extends BaseProvider {
             only: context.only,
           },
         };
+        console.log('[CodeActionProvider] Sending textDocument/codeAction for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/codeAction', params);
+          console.log('[CodeActionProvider] Got code actions:', result?.length ?? 0, 'actions');
           if (!result || !Array.isArray(result)) return null;
           return result.map((a: any) => ({
             title: a.title,

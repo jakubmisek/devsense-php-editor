@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface HoverProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class HoverProvider extends BaseProvider {
@@ -22,8 +23,10 @@ export class HoverProvider extends BaseProvider {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
         };
+        console.log('[HoverProvider] Sending textDocument/hover for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/hover', params);
+          console.log('[HoverProvider] Got hover result:', !!result?.contents);
           if (!result || !result.contents) return null;
           const contents = Array.isArray(result.contents) ? result.contents : [result.contents];
           const markdownContents = contents.map((c: any) => {

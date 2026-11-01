@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface InlayHintsProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class InlayHintsProvider extends BaseProvider {
@@ -22,8 +23,10 @@ export class InlayHintsProvider extends BaseProvider {
           textDocument: { uri: model.uri.toString() },
           range: this.toLspRange(range),
         };
+        console.log('[InlayHintsProvider] Sending textDocument/inlayHint for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/inlayHint', params);
+          console.log('[InlayHintsProvider] Got inlay hints:', result?.length ?? 0, 'hints');
           if (!result || !Array.isArray(result)) return null;
           return {
             hints: result.map((h: any) => ({
@@ -34,7 +37,7 @@ export class InlayHintsProvider extends BaseProvider {
                 text: e.text,
               })) : undefined,
               position: this.fromLspPosition(h.position),
-              kind: h.kind === 1 ? InlayHintKind.Type : InlayHintKind.Parameter,
+              kind: h.kind === 1 ? this.monaco.InlayHintKind.Type : this.monaco.InlayHintKind.Parameter,
               paddingLeft: h.paddingLeft,
               paddingRight: h.paddingRight,
             })),

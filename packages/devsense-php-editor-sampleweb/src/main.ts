@@ -2,14 +2,19 @@
  * Entry point for devsense-php-editor-sampleweb.
  *
  * Bootstraps theme, top bar, editor content area with Monaco Editor.
- * Monaco Editor is loaded via AMD loader from /public/monaco-editor/ (see index.html)
- * and exposed globally as window.monaco.
+ * Monaco Editor is imported directly from 'monaco-editor' (available
+ * transitively through devsense-php-editor in the monorepo workspace).
+ *
+ * Uses PhpEditorUI to wire Monaco editor with WebSocket RPC to the
+ * devsense-php-ls language server via the PhpEditor server.
  */
-import { ThemeManager, CSS_VARIABLES } from './theme';
+import * as monaco from 'monaco-editor';
+import { ThemeManager } from './theme';
+import { PhpEditorUI } from './editor';
 
-const WS_URL = (window as any).PHP_EDITOR_WS_URL || 'ws://127.0.0.1:0';
+const WS_URL = (window as any).PHP_EDITOR_WS_URL || 'ws://127.0.0.1:8765';
 
-function buildUI(): void {
+async function main(): Promise<void> {
   const app = document.getElementById('app')!;
   app.innerHTML = `
     <div class="app-shell">
@@ -27,7 +32,6 @@ function buildUI(): void {
       <main class="content">
         <div id="editor-container"></div>
       </main>
-      <div id="diagnostics-panel"></div>
     </div>
   `;
 
@@ -36,9 +40,6 @@ function buildUI(): void {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #app { height: 100%; width: 100%; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-
-    :root[data-theme='light'] { ${Object.entries(CSS_VARIABLES.light).map(([k, v]) => `${k}: ${v};`).join(' ')} }
-    :root[data-theme='dark'] { ${Object.entries(CSS_VARIABLES.dark).map(([k, v]) => `${k}: ${v};`).join(' ')} }
 
     .app-shell { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
 
@@ -72,61 +73,32 @@ function buildUI(): void {
   `;
   document.head.appendChild(style);
 
+  console.log('[main] Monaco Editor module loaded');
+
+  // Initialize PhpEditorUI with WebSocket connection to PhpEditor server.
+  const editorUI = new PhpEditorUI({
+    wsUrl: WS_URL,
+    containerId: 'editor-container',
+    initialContent: '<?php\n\nfunction foo($x) {\n  echo strlen($x);\n}\n',
+    monaco: (monaco as any).default ?? monaco,
+  });
+
   const themeSelect = document.getElementById('theme-select') as HTMLSelectElement;
   const theme = new ThemeManager(document.documentElement);
   themeSelect.value = theme.getTheme();
   themeSelect.addEventListener('change', (e) => {
     const val = (e.target as HTMLSelectElement).value as 'light' | 'dark' | 'automatic';
     theme.setTheme(val);
+    const m = (monaco as any).default ?? monaco;
     const monacoTheme = val === 'dark' ? 'vs-dark' : val === 'light' ? 'vs' : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'vs');
-    (window.monaco as any).editor.setTheme(monacoTheme);
+    m.editor.setTheme(monacoTheme);
   });
 
-  return { theme };
-}
-
-async function main(): Promise<void> {
-  const { theme } = buildUI();
-
-  // Wait for Monaco Editor to be loaded globally via AMD loader (see index.html).
-  const waitForMonaco = (): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      const check = () => {
-        const m = (window as any).monaco;
-        if (m && m.editor) {
-          resolve(m);
-        } else {
-          setTimeout(check, 100);
-        }
-      };
-      check();
-      setTimeout(() => reject(new Error('Monaco Editor failed to load from local files')), 30000);
-    });
-  };
-
-  const monaco = await waitForMonaco();
-
-  // Create the editor with sample PHP code
-  const editor = monaco.editor.create(document.getElementById('editor-container'), {
-    value: `<?php\n\nfunction foo(\$x) {\n  echo strlen(\$x);\n}\n`,
-    language: 'php',
-    theme: theme.getTheme() === 'dark' ? 'vs-dark' : 'vs',
-    automaticLayout: true,
-    minimap: { enabled: true },
-    fontSize: 14,
-  });
-
-  console.log('Monaco Editor created successfully with PHP code');
-  console.log('Editor value length:', editor.getValue().length);
-
-  (window as any).devsenseEditor = editor;
-  (window as any).devsenseTheme = theme;
-
-  window.addEventListener('beforeunload', () => {
-    editor.dispose();
-  });
+  console.log('[main] Application initialized');
 }
 
 main().catch((err) => {
-  console.error('Failed to start editor:', err);
+  console.error('[main] Failed to start editor:', err);
+  const app = document.getElementById('app')!;
+  app.innerHTML = `<div style="padding:20px;color:red">Failed to load editor: ${(err as Error).message}</div>`;
 });

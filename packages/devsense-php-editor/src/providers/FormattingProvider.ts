@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface FormattingProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class FormattingProvider extends BaseProvider {
@@ -25,8 +26,10 @@ export class FormattingProvider extends BaseProvider {
             insertSpaces: options.insertSpaces,
           },
         };
+        console.log('[FormattingProvider] Sending textDocument/formatting for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/formatting', params);
+          console.log('[FormattingProvider] Got formatting edits:', result?.length ?? 0, 'edits');
           if (!result || !Array.isArray(result)) return null;
           return result.map((e: any) => ({
             range: this.fromLspRange(e.range),

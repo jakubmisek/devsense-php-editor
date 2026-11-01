@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface DocumentSymbolProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class DocumentSymbolProvider extends BaseProvider {
@@ -21,8 +22,10 @@ export class DocumentSymbolProvider extends BaseProvider {
         const params = {
           textDocument: { uri: model.uri.toString() },
         };
+        console.log('[DocumentSymbolProvider] Sending textDocument/documentSymbol for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/documentSymbol', params);
+          console.log('[DocumentSymbolProvider] Got document symbols:', result?.length ?? 0, 'symbols');
           if (!result || !Array.isArray(result)) return null;
           return result.map((s: any) => this.toDocumentSymbol(s));
         } catch (err) {
@@ -35,7 +38,7 @@ export class DocumentSymbolProvider extends BaseProvider {
     this.disposables.push(disp);
   }
 
-  private toDocumentSymbol(s: any): DocumentSymbol {
+  private toDocumentSymbol(s: any): any {
     const kind = this.toSymbolKind(s.kind);
     return {
       name: s.name,
@@ -49,20 +52,20 @@ export class DocumentSymbolProvider extends BaseProvider {
     };
   }
 
-  private toSymbolKind(k?: number): SymbolKind {
-    const map: Record<number, SymbolKind> = {
-      1: SymbolKind.File, 2: SymbolKind.Module, 3: SymbolKind.Namespace, 4: SymbolKind.Package,
-      5: SymbolKind.Class, 6: SymbolKind.Method, 7: SymbolKind.Property, 8: SymbolKind.Field,
-      9: SymbolKind.Constructor, 10: SymbolKind.Enum, 11: SymbolKind.Interface, 12: SymbolKind.Function,
-      13: SymbolKind.Variable, 14: SymbolKind.Constant, 15: SymbolKind.String, 16: SymbolKind.Number,
-      17: SymbolKind.Boolean, 18: SymbolKind.Array, 19: SymbolKind.Object, 20: SymbolKind.Key,
-      21: SymbolKind.Null, 22: SymbolKind.EnumMember, 23: SymbolKind.Struct, 24: SymbolKind.Event,
-      25: SymbolKind.Operator, 26: SymbolKind.TypeParameter,
+  private toSymbolKind(k?: number): any {
+    const map: Record<number, any> = {
+      1: this.monaco.SymbolKind.File, 2: this.monaco.SymbolKind.Module, 3: this.monaco.SymbolKind.Namespace, 4: this.monaco.SymbolKind.Package,
+      5: this.monaco.SymbolKind.Class, 6: this.monaco.SymbolKind.Method, 7: this.monaco.SymbolKind.Property, 8: this.monaco.SymbolKind.Field,
+      9: this.monaco.SymbolKind.Constructor, 10: this.monaco.SymbolKind.Enum, 11: this.monaco.SymbolKind.Interface, 12: this.monaco.SymbolKind.Function,
+      13: this.monaco.SymbolKind.Variable, 14: this.monaco.SymbolKind.Constant, 15: this.monaco.SymbolKind.String, 16: this.monaco.SymbolKind.Number,
+      17: this.monaco.SymbolKind.Boolean, 18: this.monaco.SymbolKind.Array, 19: this.monaco.SymbolKind.Object, 20: this.monaco.SymbolKind.Key,
+      21: this.monaco.SymbolKind.Null, 22: this.monaco.SymbolKind.EnumMember, 23: this.monaco.SymbolKind.Struct, 24: this.monaco.SymbolKind.Event,
+      25: this.monaco.SymbolKind.Operator, 26: this.monaco.SymbolKind.TypeParameter,
     };
-    return map[k] ?? SymbolKind.Function;
+    return map[k] ?? this.monaco.SymbolKind.Function;
   }
 
-  private toSymbolTag(t?: number): SymbolTag {
-    return t === 1 ? SymbolTag.Deprecated : SymbolTag.Deprecated;
+  private toSymbolTag(t?: number): any {
+    return t === 1 ? this.monaco.SymbolTag.Deprecated : this.monaco.SymbolTag.Deprecated;
   }
 }

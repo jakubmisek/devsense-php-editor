@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface CodeLensProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class CodeLensProvider extends BaseProvider {
@@ -21,8 +22,10 @@ export class CodeLensProvider extends BaseProvider {
         const params = {
           textDocument: { uri: model.uri.toString() },
         };
+        console.log('[CodeLensProvider] Sending textDocument/codeLens for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/codeLens', params);
+          console.log('[CodeLensProvider] Got code lenses:', result?.length ?? 0, 'lenses');
           if (!result || !Array.isArray(result)) return null;
           return {
             lenses: result.map((l: any) => ({

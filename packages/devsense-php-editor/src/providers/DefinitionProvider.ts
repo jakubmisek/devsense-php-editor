@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface DefinitionProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
 }
 
 export class DefinitionProvider extends BaseProvider {
@@ -22,8 +23,10 @@ export class DefinitionProvider extends BaseProvider {
           textDocument: { uri: model.uri.toString() },
           position: this.toLspPosition(position),
         };
+        console.log('[DefinitionProvider] Sending textDocument/definition for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/definition', params);
+          console.log('[DefinitionProvider] Got definition result:', result?.length ?? 0, 'locations');
           if (!result) return null;
           const locations = Array.isArray(result) ? result : [result];
           return locations.map((loc: any) => this.fromLspLocation(loc));

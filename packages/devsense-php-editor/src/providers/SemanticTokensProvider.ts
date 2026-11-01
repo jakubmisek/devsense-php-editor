@@ -8,6 +8,7 @@ import { MonacoLanguageApi } from './base';
 export interface SemanticTokensProviderOptions {
   selector: any;
   languageId: string;
+  monaco: any;
   legend: SemanticTokensLegend;
 }
 
@@ -26,8 +27,10 @@ export class SemanticTokensProvider extends BaseProvider {
         const params = {
           textDocument: { uri: model.uri.toString() },
         };
+        console.log('[SemanticTokensProvider] Sending textDocument/semanticTokens/full for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/semanticTokens/full', params);
+          console.log('[SemanticTokensProvider] Got semantic tokens:', result?.data?.length ?? 0, 'tokens');
           if (!result) return null;
           return {
             resultId: result.resultId,

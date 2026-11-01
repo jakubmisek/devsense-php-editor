@@ -37,8 +37,10 @@ export class SignatureHelpProvider extends BaseProvider {
             activeSignatureHelp: context.activeSignatureHelp,
           },
         };
+        console.log('[SignatureHelpProvider] Sending textDocument/signatureHelp for', params.textDocument.uri);
         try {
           const result = await this.router.sendRequest('textDocument/signatureHelp', params);
+          console.log('[SignatureHelpProvider] Got signature help:', !!result?.signatures?.length);
           if (!result || !result.signatures || result.signatures.length === 0) return null;
           const signatures: SignatureInformation[] = result.signatures.map((s: any) => ({
             label: s.label,
