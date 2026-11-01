@@ -1,4 +1,6 @@
 import { PhpEditor } from './PhpEditor';
+export { PhpEditor };
+export type { PhpEditorInfo } from './PhpEditor';
 export type { PhpEditorOptions } from './PhpEditor';
 
 // LSP-backed Monaco providers (M3) — used directly by consumers (sampleweb)
