@@ -60,8 +60,21 @@ export class Router {
   /** LS -> client requests forwarded to a browser: client-visible id -> owner + LS id. */
   private forwardedLsRequests = new Map<string, { clientId: string; lsId: string | number }>();
   private nextForwardId = 1;
-  /** Clients with an in-flight `workspace/executeCommand` (LS window/showMessage goes to them). */
-  private executingClients: string[] = [];
+  /**
+   * `workspace/executeCommand` is serialized across clients: devsense-php-ls identifies some
+   * command targets by symbol id only (e.g. `["Construct","A$6"]`), and two identical commands
+   * in flight at once yield a single `workspace/applyEdit`. One at a time also lets us route
+   * the command's `window/showMessage` to exactly its caller.
+   */
+  private executing: { clientId: string; lsId: number } | null = null;
+  /**
+   * devsense-php-ls resolves code-action command arguments against the most recent
+   * `textDocument/codeAction` it served, so a command must follow its own client's request.
+   * We remember each client's last codeAction params and replay them when needed.
+   */
+  private lastCodeAction = new Map<string, unknown>();
+  private lastCodeActionClient: string | null = null;
+  private commandQueue: Array<{ clientId: string; lsId: number; message: JsonRpcMessage }> = [];
   private initResult: lsp.InitializeResult | null = null;
   private ready: Promise<lsp.InitializeResult>;
   /** Count of `initialize` requests actually sent to the LS (for diagnostics/tests). */
@@ -152,7 +165,15 @@ export class Router {
       if (isRequest) {
         const lsId = this.nextRequestId++;
         this.pending.set(lsId, { clientId: client.id, originalId: id as string | number, method });
-        if (method === 'workspace/executeCommand') this.executingClients.push(client.id);
+        if (method === 'textDocument/codeAction') {
+          this.lastCodeAction.set(client.id, data.params);
+          this.lastCodeActionClient = client.id;
+        }
+        if (method === 'workspace/executeCommand') {
+          this.commandQueue.push({ clientId: client.id, lsId, message: { ...data, id: lsId } });
+          this.pumpCommands();
+          return;
+        }
         this.ls.send({ ...data, id: lsId });
       } else {
         this.ls.send(data);
@@ -162,7 +183,22 @@ export class Router {
     if (this.initResult) forward(); else this.ready.then(forward, () => undefined);
   }
 
+  private pumpCommands(): void {
+    if (this.executing) return;
+    const next = this.commandQueue.shift();
+    if (!next) return;
+    this.executing = { clientId: next.clientId, lsId: next.lsId };
+    const replay = this.lastCodeActionClient !== next.clientId ? this.lastCodeAction.get(next.clientId) : undefined;
+    if (replay === undefined) { this.ls.send(next.message); return; }
+    this.lastCodeActionClient = next.clientId;
+    this.request('textDocument/codeAction', replay).catch(() => undefined).then(() => {
+      if (this.executing?.lsId === next.lsId) this.ls.send(next.message);
+    });
+  }
+
   private handleDisconnect(clientId: string): void {
+    this.lastCodeAction.delete(clientId);
+    if (this.lastCodeActionClient === clientId) this.lastCodeActionClient = null;
     for (const [key, fwd] of this.forwardedLsRequests) {
       if (fwd.clientId !== clientId) continue;
       this.forwardedLsRequests.delete(key);
@@ -176,7 +212,8 @@ export class Router {
     for (const [lsId, p] of this.pending) {
       if (p.clientId === clientId) {
         this.pending.delete(lsId);
-        this.executingClients = this.executingClients.filter((c) => c !== clientId);
+        this.commandQueue = this.commandQueue.filter((c) => c.clientId !== clientId);
+        if (this.executing?.lsId === lsId) { this.executing = null; this.pumpCommands(); }
         this.ls.send({ jsonrpc: '2.0', method: '$/cancelRequest', params: { id: lsId } });
       }
     }
@@ -206,8 +243,8 @@ export class Router {
         this.pending.delete(message.id as number);
         // Deliver after any window/showMessage the command produced.
         if (p.method === 'workspace/executeCommand') {
-          const i = this.executingClients.indexOf(p.clientId);
-          if (i >= 0) this.executingClients.splice(i, 1);
+          if (this.executing?.lsId === message.id) this.executing = null;
+          queueMicrotask(() => this.pumpCommands());
         }
         this.sendToClient(p.clientId, { ...message, id: p.originalId });
       }
@@ -223,8 +260,8 @@ export class Router {
     }
 
     // A message produced by a command (e.g. the "(PREMIUM)" notice) goes to the client that ran it.
-    if (message.method === 'window/showMessage' && this.executingClients.length > 0) {
-      this.sendToClient(this.executingClients[0], message);
+    if (message.method === 'window/showMessage' && this.executing) {
+      this.sendToClient(this.executing.clientId, message);
       return;
     }
 
