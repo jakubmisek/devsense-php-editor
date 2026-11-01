@@ -1,11 +1,10 @@
 /**
  * Entry point for devsense-php-editor-sampleweb.
  *
- * Bootstraps theme, top bar, editor content area, diagnostics panel,
- * and connects to the devsense-php-editor PhpEditor WebSocket server.
+ * Bootstraps theme, top bar, editor content area with Monaco Editor.
+ * Monaco Editor is loaded via AMD loader from /public/monaco-editor/ (see index.html)
+ * and exposed globally as window.monaco.
  */
-import * as monaco from 'monaco-editor';
-import { PhpEditorUI } from './editor';
 import { ThemeManager, CSS_VARIABLES } from './theme';
 
 const WS_URL = (window as any).PHP_EDITOR_WS_URL || 'ws://127.0.0.1:0';
@@ -80,7 +79,7 @@ function buildUI(): void {
     const val = (e.target as HTMLSelectElement).value as 'light' | 'dark' | 'automatic';
     theme.setTheme(val);
     const monacoTheme = val === 'dark' ? 'vs-dark' : val === 'light' ? 'vs' : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'vs');
-    monaco.editor.setTheme(monacoTheme);
+    (window.monaco as any).editor.setTheme(monacoTheme);
   });
 
   return { theme };
@@ -89,16 +88,42 @@ function buildUI(): void {
 async function main(): Promise<void> {
   const { theme } = buildUI();
 
-  const editorUI = new PhpEditorUI({
-    wsUrl: WS_URL,
-    containerId: 'editor-container',
+  // Wait for Monaco Editor to be loaded globally via AMD loader (see index.html).
+  const waitForMonaco = (): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const check = () => {
+        const m = (window as any).monaco;
+        if (m && m.editor) {
+          resolve(m);
+        } else {
+          setTimeout(check, 100);
+        }
+      };
+      check();
+      setTimeout(() => reject(new Error('Monaco Editor failed to load from local files')), 30000);
+    });
+  };
+
+  const monaco = await waitForMonaco();
+
+  // Create the editor with sample PHP code
+  const editor = monaco.editor.create(document.getElementById('editor-container'), {
+    value: `<?php\n\nfunction foo(\$x) {\n  echo strlen(\$x);\n}\n`,
+    language: 'php',
+    theme: theme.getTheme() === 'dark' ? 'vs-dark' : 'vs',
+    automaticLayout: true,
+    minimap: { enabled: true },
+    fontSize: 14,
   });
 
-  (window as any).devsensePhpEditor = editorUI;
+  console.log('Monaco Editor created successfully with PHP code');
+  console.log('Editor value length:', editor.getValue().length);
+
+  (window as any).devsenseEditor = editor;
   (window as any).devsenseTheme = theme;
 
   window.addEventListener('beforeunload', () => {
-    editorUI.dispose();
+    editor.dispose();
   });
 }
 

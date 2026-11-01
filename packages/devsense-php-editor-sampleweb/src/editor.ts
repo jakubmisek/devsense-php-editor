@@ -7,11 +7,13 @@
  * from the WebSocket into the model markers.
  *
  * Connects to a devsense-php-editor PhpEditor WebSocket server.
+ *
+ * Monaco Editor is imported directly and bundled locally.
  */
 import * as monaco from 'monaco-editor';
 import { WsClient } from './ws-client';
 import { DiagnosticsPanel } from './diagnostics';
-import { ThemeManager, CSS_VARIABLES } from './theme';
+import { ThemeManager } from './theme';
 
 // Browser-safe LSP providers (built from providers/browser-index.ts).
 // These forward LSP requests through the WebSocket to devsense-php-ls.
@@ -139,6 +141,7 @@ export class PhpEditorUI {
   private registerProviders(): void {
     const selector = { language: 'php' };
     const ws = this.ws as any;
+    const lang = monaco.languages;
 
     const providers = [
       new CompletionProvider(ws, { selector, languageId: 'php' }),
@@ -159,7 +162,7 @@ export class PhpEditorUI {
     ];
 
     for (const p of providers) {
-      p.register(monaco.languages);
+      p.register(lang);
       this.providers.push(p);
     }
   }
@@ -185,7 +188,7 @@ export class PhpEditorUI {
         this.diagnostics.setDiagnostics(uri, markers);
 
         if (this.model) {
-          monaco.editor.setModelMarkers(this.model, 'devsense-php-ls', markers.map((m) => ({
+          monaco.editor.setModelMarkers(this.model, 'devsense-php-ls', markers.map((m: any) => ({
             startLineNumber: m.startLineNumber,
             startColumn: m.startColumn,
             endLineNumber: m.endLineNumber,
