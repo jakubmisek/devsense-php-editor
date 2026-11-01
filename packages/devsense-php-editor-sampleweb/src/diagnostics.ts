@@ -19,7 +19,7 @@ export class DiagnosticsPanel {
   private container: HTMLElement;
   private list: HTMLElement;
   private header: HTMLElement;
-  private collapsed = false;
+  private collapsed = true;
   private markersByUri = new Map<string, DiagnosticMarker[]>();
 
   constructor(containerId = 'diagnostics-panel') {

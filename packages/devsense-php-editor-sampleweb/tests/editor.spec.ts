@@ -45,13 +45,14 @@ test.describe('DEVSENSE PHP Editor Playground', () => {
     // Toggle diagnostics panel
     const header = panel.locator('.diagnostics-header');
     await expect(header).toBeVisible();
-    await header.click();
 
-    // List should toggle
+    // Starts collapsed; each click on the header toggles the list.
     const list = panel.locator('.diagnostics-list');
     await expect(list).toBeHidden();
     await header.click();
     await expect(list).toBeVisible();
+    await header.click();
+    await expect(list).toBeHidden();
   });
 
   test('editor accepts typing', async ({ page }) => {

@@ -55,6 +55,8 @@ export class ThemeManager {
       resolved = this.current;
     }
     this.root.setAttribute('data-theme', resolved);
+    for (const [name, value] of Object.entries(CSS_VARIABLES[resolved])) this.root.style.setProperty(name, value);
+    document.body.style.background = CSS_VARIABLES[resolved]['--theme-bg'];
     this.root.classList.remove('theme-light', 'theme-dark');
     this.root.classList.add(`theme-${resolved}`);
   }

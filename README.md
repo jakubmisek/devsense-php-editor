@@ -11,6 +11,20 @@ This is an npm-workspaces monorepo with two packages:
 | [`packages/devsense-php-editor`](packages/devsense-php-editor) | The library. Node side: the `PhpEditor` class (spawns `devsense-php-ls`, runs the WebSocket server and routes messages). Browser side: `devsense-php-editor/browser`, the `createPhpEditor` component (Monaco editor + WebSocket LSP client + providers + diagnostics). |
 | [`packages/devsense-php-editor-sampleweb`](packages/devsense-php-editor-sampleweb) | A demo page (Vite) that only uses `createPhpEditor`: page layout, theme switcher, diagnostics panel, sample code. It has no Monaco dependency and no editor code. It also contains the Playwright end-to-end tests. |
 
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Overview, dark theme](docs/screenshots/overview-dark.png) | ![Completion list](docs/screenshots/completion-list.png) |
+| Overview (dark theme): inlay hint and code lens | Completion list after typing `str` |
+| ![Inlay hints](docs/screenshots/inlay-hints.png) | ![Diagnostics panel](docs/screenshots/diagnostics-panel.png) |
+| Parameter-name inlay hints in function calls | Diagnostics panel expanded, with squiggles\* |
+
+\* The server doesn't publish diagnostics for `untitled-workspace-{id}://` documents yet (see
+[Known server-side limitations](#known-server-side-limitations)). This screenshot was taken with a temporary, uncommitted
+local change that opened the document as `untitled-workspace://{id}/untitled.php`, a URI the server does publish
+diagnostics for. The diagnostics are real server output.
+
 ## Architecture
 
 ```
@@ -83,7 +97,7 @@ npm run dev          # builds the library, starts PhpEditor + Vite on http://loc
 npm install devsense-php-editor
 ```
 
-`monaco-editor` comes with the package (a regular dependency). See [Monaco and bundler requirements](#bundler-requirements--limitations).
+`monaco-editor` comes with the package (a regular dependency). See [Bundler requirements & limitations](#bundler-requirements--limitations).
 
 The package has two entry points:
 
