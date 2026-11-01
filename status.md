@@ -84,7 +84,7 @@ devsense-php-editor-repo/
 | M3 | LSP providers | ✅ Complete |
 | M4 | Sample web app | ✅ Complete |
 | M5 | Playwright tests | ✅ Complete (11/11 passing) |
-| M6 | Demo & verification | ❌ Not started |
+| M6 | Demo & verification | ✅ Complete |
 
 ## Completed Fixes
 
@@ -107,7 +107,12 @@ devsense-php-editor-repo/
 - theme.spec.ts: 2/2 passing
 - features.spec.ts: 2/2 passing
 
-## Remaining Work
+## Git Status
 
-1. Commit and push all changes to git
-2. (Optional) M6 Demo & verification - screenshot + Discord post
+- All changes committed to master (commit 8937f53)
+- Pushed to github.com:jakubmisek/devsense-php-editor.git
+- 31 files changed, 572 insertions(+), 191 deletions(-)
+
+## All Milestones Complete
+
+M1-M6 all complete. The Online PHP Editor implementation is finished with a fully working Monaco Editor + devsense-php-ls language server integration over WebSocket RPC.
