@@ -6,7 +6,7 @@ import { Router } from './server/Router';
 import { VirtualWorkspace } from './workspace/VirtualWorkspace';
 
 export interface PhpEditorOptions {
-  /** WebSocket port (0 = random available port). Default 0. */
+  /** WebSocket port (0 = random available port). Default 8765. */
   port?: number;
   /** Host to bind the WebSocket server to. Default '127.0.0.1'. */
   host?: string;
@@ -20,6 +20,8 @@ export interface PhpEditorOptions {
   env?: Record<string, string>;
   /** Optional logger. */
   logger?: (msg: string) => void;
+  /** File path to write the WS port for client discovery. */
+  portFile?: string;
 }
 
 export interface PhpEditorInfo {
@@ -45,7 +47,7 @@ export class PhpEditor {
 
   constructor(options: PhpEditorOptions = {}) {
     this.options = {
-      port: 0,
+      port: 8765,
       host: '127.0.0.1',
       ...options,
     };
@@ -101,10 +103,24 @@ export class PhpEditor {
 
     this.router = new Router(client, this.ws, { initializationOptions });
 
+    // Write port to file for client discovery if configured.
+    if (this.options.portFile) {
+      const fs = require('fs');
+      fs.writeFileSync(this.options.portFile, String(port));
+      console.log('[PhpEditor] WS port written to', this.options.portFile);
+    }
+
     // Per-client virtual workspace assignment + diagnostic URI ownership.
     this.ws.on('connection', (client) => {
       const workspace = new VirtualWorkspace(client.id);
       this.router!.registerUri(client.id, workspace.rootUri);
+      // Tell the client its assigned workspace URI so it can build matching
+      // virtual document URIs (fixes diagnostic routing / LS doc recognition).
+      this.ws.sendTo(client.id, {
+        jsonrpc: '2.0',
+        method: 'client/workspace',
+        params: { clientId: client.id, workspaceUri: workspace.rootUri },
+      });
       console.log('[PhpEditor] Client connected:', client.id, '(workspace', workspace.rootUri, ')');
       this.options.logger?.(`Client connected: ${client.id} (workspace ${workspace.rootUri})`);
     });

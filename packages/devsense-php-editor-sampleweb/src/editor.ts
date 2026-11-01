@@ -44,23 +44,29 @@ export class PhpEditorUI {
   private theme: ThemeManager;
   private providers: Array<{ dispose(): void }> = [];
   private virtualDocUri: string = '';
+  /** Server-assigned workspace URI, e.g. `untitled-workspace-client-1://`. Empty until the WS hello arrives. */
+  private workspaceUri: string = '';
   private readonly monaco: any;
   private wsConnected = false;
+  private readonly initialContent: string;
 
   constructor(opts: EditorOptions) {
     this.monaco = opts.monaco;
+    this.initialContent = opts.initialContent ?? '<?php\n\n// Hello from DEVSENSE PHP Editor\n\nfunction greet(string $name): void {\n    echo "Hello, " . $name;\n}\n';
     this.ws = new WsClient(opts.wsUrl);
     this.diagnostics = new DiagnosticsPanel();
     this.theme = new ThemeManager();
     console.log('[editor] PhpEditorUI created, WS URL:', opts.wsUrl);
+    // Set the message handler BEFORE connecting so the server's client/workspace
+    // welcome message (sent right after the WS opens) is never missed.
+    this.ws.setOnMessage((message) => {
+      console.log('[editor] <- Server message:', message.method || message.id || 'response');
+      this.handleServerMessage(message);
+    });
     // Connect to WS non-blocking; editor creation should not depend on WS.
     this.ws.connect().then(() => {
       this.wsConnected = true;
       console.log('[editor] WebSocket connected');
-      this.ws.setOnMessage((message) => {
-        console.log('[editor] <- Server message:', message.method || message.id || 'response');
-        this.handleServerMessage(message);
-      });
       // Re-send didOpen now that we're connected
       if (this.model) {
         this.ws.sendNotification('textDocument/didOpen', {
@@ -76,16 +82,16 @@ export class PhpEditorUI {
     }).catch((err) => {
       console.warn('[editor] WebSocket connection failed (editor will still work without LSP):', err.message);
     });
-    this.init(opts.containerId, opts.initialContent);
+    this.init(opts.containerId);
   }
 
-  private async init(containerId: string, initialContent?: string): Promise<void> {
+  private async init(containerId: string): Promise<void> {
     const container = document.getElementById(containerId);
     if (!container) throw new Error(`Container #${containerId} not found`);
 
     console.log('[editor] Creating Monaco Editor...');
     this.editor = this.monaco.editor.create(container, {
-      value: initialContent ?? '<?php\n\n// Hello from DEVSENSE PHP Editor\n\nfunction greet(string $name): void {\n    echo "Hello, " . $name;\n}\n',
+      value: this.initialContent,
       language: 'php',
       theme: this.theme.getTheme() === 'dark' ? 'vs-dark' : 'vs',
       automaticLayout: true,
@@ -97,29 +103,44 @@ export class PhpEditorUI {
 
     this.monaco.languages.register({ id: 'php', extensions: ['.php'], aliases: ['PHP'] });
 
-    // Create virtual document model with untitled-workspace schema.
-    this.model = this.monaco.editor.createModel(
-      initialContent ?? '<?php\n\n// Hello from DEVSENSE PHP Editor\n',
-      'php',
-      this.monaco.Uri.parse('untitled-workspace-client://untitled.php')
-    );
-    this.editor.setModel(this.model);
-    this.virtualDocUri = this.model.uri.toString();
-
-    console.log('[editor] Model created:', this.virtualDocUri);
+    // Wait for the server-assigned workspace URI (arrives over WS as
+    // client/workspace right after connect) before creating the virtual
+    // document model. This avoids ever using a hardcoded URI that won't match
+    // the server's per-client untitled-workspace-{id}:// scheme.
+    await this.workspaceReady();
+    this.createModel(this.initialContent);
 
     await this.performInitialize();
     this.registerProviders();
 
     this.editor.onDidChangeModelContent((e: any) => {
       console.log('[editor] Model content changed');
-      if (this.wsConnected) {
+      if (this.wsConnected && this.virtualDocUri) {
         this.ws.sendNotification('textDocument/didChange', {
           textDocument: { uri: this.virtualDocUri, version: this.model?.getVersionId() ?? 0 },
           contentChanges: [{ text: this.model?.getValue() ?? '' }],
         });
       }
     });
+  }
+
+  /** Resolves once the server-assigned workspace URI is known. */
+  private readonly workspaceReadyPromise = new Promise<void>((resolve) => {
+    this.resolveWorkspaceReady = resolve;
+  });
+  private resolveWorkspaceReady!: () => void;
+
+  private async workspaceReady(): Promise<void> {
+    return this.workspaceReadyPromise;
+  }
+
+  /** Create the virtual document model under the server-assigned workspace URI. */
+  private createModel(content: string): void {
+    const uri = this.workspaceUri ? `${this.workspaceUri}untitled.php` : 'untitled-workspace-client://untitled.php';
+    this.model = this.monaco.editor.createModel(content, 'php', this.monaco.Uri.parse(uri));
+    this.editor.setModel(this.model);
+    this.virtualDocUri = this.model.uri.toString();
+    console.log('[editor] Model created:', this.virtualDocUri);
   }
 
   private async performInitialize(): Promise<void> {
@@ -195,7 +216,7 @@ export class PhpEditorUI {
     ];
 
     for (const p of providers) {
-      p.register(lang);
+      p.register(this.monaco);
       this.providers.push(p);
     }
     console.log('[editor]', providers.length, 'providers registered');
@@ -204,6 +225,22 @@ export class PhpEditorUI {
   private handleServerMessage(message: any): void {
     const method = message.method;
     const params = message.params || {};
+
+    // Server hello: tells this client its assigned workspace URI so the
+    // virtual document URI matches the server's per-client scheme.
+    if (method === 'client/workspace') {
+      this.workspaceUri = params.workspaceUri ?? '';
+      if (this.workspaceUri) {
+        console.log('[editor] Assigned workspace URI:', this.workspaceUri);
+        this.resolveWorkspaceReady?.();
+        // Model may already be queued (created lazily in init after workspaceReady);
+        // if it was created with the fallback URI, re-create under the real one.
+        if (this.model && this.virtualDocUri !== this.workspaceUri + 'untitled.php') {
+          this.createModel(this.model?.getValue() ?? this.initialContent);
+        }
+      }
+      return;
+    }
 
     if (method === 'textDocument/publishDiagnostics') {
       const uri = params.textDocument?.uri;
