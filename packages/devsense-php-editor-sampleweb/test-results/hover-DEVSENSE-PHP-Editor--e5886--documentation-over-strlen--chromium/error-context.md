@@ -1,0 +1,42 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]: DEVSENSE PHP Editor Playground
+      - generic [ref=e6]:
+        - generic [ref=e7]: "Theme:"
+        - combobox [ref=e8] [cursor=pointer]:
+          - option "Automatic" [selected]
+          - option "Light"
+          - option "Dark"
+    - main [ref=e9]:
+      - code [ref=e11]:
+        - generic [ref=e12]:
+          - textbox "Editor content" [active]
+          - textbox [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e17]: "1"
+            - generic [ref=e19]: "2"
+            - generic [ref=e20]:
+              - generic [ref=e21] [cursor=pointer]: 
+              - generic [ref=e22]: "3"
+            - generic [ref=e24]: "4"
+            - generic [ref=e26]: "5"
+            - generic [ref=e29]: "6"
+          - generic [ref=e39]:
+            - generic [ref=e41]: <?php
+            - generic [ref=e44]: "function foo($x) {"
+            - generic [ref=e46]: echo strlen($x);
+            - generic [ref=e48]: "}"
+            - generic [ref=e50]: <?php echo strlen("hello");
+  - generic [ref=e60] [cursor=pointer]:
+    - generic [ref=e61]:
+      - text: Diagnostics
+      - generic [ref=e62]: "0"
+    - button "▾" [ref=e63]
+  - generic [ref=e64]:
+    - alert
+    - alert
+```

@@ -3,7 +3,8 @@
  *
  * Bootstraps theme, top bar, editor content area with Monaco Editor.
  * Monaco Editor is imported from 'monaco-editor' (transitive dependency
- * through devsense-php-editor in the monorepo workspace).
+ * through devsense-php-editor in the monorepo workspace, hoisted to root
+ * node_modules and resolved by Vite).
  *
  * Uses PhpEditorUI to wire Monaco editor with WebSocket RPC to the
  * devsense-php-ls language server via the PhpEditor server.

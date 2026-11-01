@@ -4,27 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DEVSENSE PHP Editor Playground</title>
-  <link rel="stylesheet" href="/monaco-editor/vs/editor/editor.main.css" />
-  <script>
-    window.MonacoEnvironment = {
-      baseUrl: '/monaco-editor/',
-    };
-  </script>
-  <script src="/monaco-editor/vs/loader.js"></script>
-  <script>
-    // Load Monaco Editor via AMD loader, then expose window.monaco fully
-    window.require(['vs/editor/editor.main'], function (monaco) {
-      window.monaco = monaco;
-      console.log('[AMD] Monaco Editor loaded, exposing window.monaco');
-      // Now load the main application
-      const script = document.createElement('script');
-      script.type = 'module';
-      script.src = '/src/main.ts';
-      document.head.appendChild(script);
-    });
-  </script>
 </head>
 <body>
   <div id="app"></div>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
