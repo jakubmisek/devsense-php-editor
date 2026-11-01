@@ -8,6 +8,7 @@
 import { createPhpEditor, type PhpEditorTheme } from 'devsense-php-editor/browser';
 import { ThemeManager } from './theme';
 import { DiagnosticsPanel } from './diagnostics';
+import { createThemeSwitch, THEME_SWITCH_CSS } from './theme-switch';
 import './types';
 
 const SAMPLE_CODE = '<?php\n\nfunction foo($x) {\n  echo strlen($x);\n}\n';
@@ -58,14 +59,7 @@ async function main(): Promise<void> {
     <div class="app-shell">
       <header class="top-bar">
         <div class="title">DEVSENSE PHP Editor Playground</div>
-        <div class="theme-switcher">
-          <label>Theme:</label>
-          <select id="theme-select">
-            <option value="automatic">Automatic</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
+        <div id="theme-switch-slot"></div>
       </header>
       <main class="content">
         <div id="editor-container"></div>
@@ -94,21 +88,11 @@ async function main(): Promise<void> {
       color: var(--theme-fg);
     }
     .top-bar .title { flex: 1; }
-    .theme-switcher { display: flex; align-items: center; gap: 8px; color: var(--theme-fg); }
-    .theme-switcher label { font-size: 12px; color: var(--theme-text-muted); }
-    .theme-switcher select {
-      background: var(--theme-bg);
-      color: var(--theme-fg);
-      border: 1px solid var(--theme-border);
-      padding: 4px 8px;
-      font-size: 12px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
 
     .content { flex: 1; overflow: hidden; position: relative; }
     #editor-container { width: 100%; height: 100%; }
   `;
+  style.textContent += THEME_SWITCH_CSS;
   document.head.appendChild(style);
 
   const wsUrl = await resolveWsUrl();
@@ -133,13 +117,10 @@ async function main(): Promise<void> {
   window.phpEditor = phpEditor;
   window.monaco = phpEditor.monaco;
 
-  const themeSelect = document.getElementById('theme-select') as HTMLSelectElement;
-  themeSelect.value = theme.getTheme();
-  themeSelect.addEventListener('change', () => {
-    const val = themeSelect.value as 'light' | 'dark' | 'automatic';
+  document.getElementById('theme-switch-slot')!.replaceWith(createThemeSwitch(theme.getTheme(), (val) => {
     theme.setTheme(val);
     phpEditor.setTheme(toEditorTheme(val));
-  });
+  }));
 
   console.log('[main] Application initialized');
 }
