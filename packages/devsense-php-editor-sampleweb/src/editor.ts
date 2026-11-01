@@ -1,15 +1,14 @@
 /**
  * Monaco Editor setup + LSP provider wiring.
  *
- * Monaco Editor is injected via the constructor (loaded via AMD loader
- * from /monaco-editor/ in index.html), not imported directly.
- * This keeps monaco-editor as a browser-loaded dependency, not a bundled one.
+ * The Monaco API object is injected via the constructor (main.ts imports
+ * monaco-editor, which comes transitively through devsense-php-editor).
  */
 import { WsClient } from './ws-client';
 import { DiagnosticsPanel } from './diagnostics';
 import { ThemeManager } from './theme';
 
-// Browser-safe LSP providers (built from providers.browser.js).
+// Browser-safe LSP providers (generated bundle: devsense-php-editor/browser).
 // These forward LSP requests through the WebSocket to devsense-php-ls.
 import {
   CompletionProvider,
@@ -27,7 +26,7 @@ import {
   InlayHintsProvider,
   CodeLensProvider,
   RenameProvider,
-} from './providers.browser.js';
+} from 'devsense-php-editor/browser';
 
 export interface EditorOptions {
   wsUrl: string;

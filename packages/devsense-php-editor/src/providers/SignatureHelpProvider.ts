@@ -10,6 +10,7 @@ export interface SignatureHelpProviderOptions {
   languageId: string;
   triggerCharacters?: string[];
   retriggerCharacters?: string[];
+  monaco?: any;
 }
 
 export class SignatureHelpProvider extends BaseProvider {

@@ -18,7 +18,7 @@ export class InlayHintsProvider extends BaseProvider {
 
   register(monaco: MonacoLanguageApi): void {
     const provider = {
-      provideInlayHints: async (model: any, range: Range, token: CancellationToken): Promise<ProviderResult<InlayHintList>> => {
+      provideInlayHints: async (model: any, range: any, token: CancellationToken): Promise<ProviderResult<InlayHintList>> => {
         const params = {
           textDocument: { uri: model.uri.toString() },
           range: this.toLspRange(range),
@@ -34,7 +34,7 @@ export class InlayHintsProvider extends BaseProvider {
               tooltip: h.tooltip,
               textEdits: h.textEdits ? h.textEdits.map((e: any) => ({
                 range: this.fromLspRange(e.range),
-                text: e.text,
+                text: e.newText,
               })) : undefined,
               position: this.fromLspPosition(h.position),
               kind: h.kind === 1 ? this.monaco.InlayHintKind.Type : this.monaco.InlayHintKind.Parameter,

@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
  * untitled-workspace-{id}:// URI when triggered properly.
  *
  * Each test is self-contained: it navigates to /, waits for the Monaco editor
- * to render, and skips gracefully if the PHP language server backend isn't
+ * to render, and fails if the PHP language server backend isn't
  * responding (port file unreachable).
  */
 test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
@@ -21,7 +21,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)');
+    expect(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)').toBe(false);
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
@@ -45,19 +45,21 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
     await expect(completion).toContainText('echo', { timeout: 10000 });
   });
 
-  test('shows completion widget after typing "<?php $x = " and triggering after "$"', async ({
-    page,
-  }) => {
-    await page.locator(EDITOR).click();
-    await page.keyboard.insertText('<?php $x = ');
-    // Position caret right after the "$"-style trigger; trigger completion.
-    await page.keyboard.press('Control+Space');
-    // Give the LS a moment to compute completion items.
-    await page.waitForTimeout(1000);
-
+  test('offers a previously declared variable after typing "$xy"', async ({ page }) => {
+    // $x is declared on an earlier line; after typing "$" the LS should offer it.
+    await page.evaluate(() => {
+      const ed = (window as any).monaco.editor.getEditors()[0];
+      ed.getModel().setValue('<?php\n$xyz = 1;\necho ');
+      const m = ed.getModel();
+      ed.setPosition({ lineNumber: 3, column: m.getLineMaxColumn(3) });
+      ed.focus();
+    });
+    await page.keyboard.type('$');
     const completion = page.locator(COMPLETION_LIST);
     await expect(completion).toBeVisible({ timeout: 10000 });
-    // Variable completions (e.g. $x) should be offered by the language server.
-    await expect(completion).toContainText('$x', { timeout: 10000 });
+    // The suggest list is virtualized (~12 rows) and superglobals sort first,
+    // so narrow it the way a user would before asserting.
+    await page.keyboard.type('xy');
+    await expect(completion).toContainText('$xyz', { timeout: 10000 });
   });
 });

@@ -18,7 +18,7 @@ export class RangeFormattingProvider extends BaseProvider {
 
   register(monaco: MonacoLanguageApi): void {
     const provider = {
-      provideDocumentRangeFormattingEdits: async (model: any, range: Range, options: FormattingOptions, token: CancellationToken): Promise<ProviderResult<TextEdit[]>> => {
+      provideDocumentRangeFormattingEdits: async (model: any, range: any, options: FormattingOptions, token: CancellationToken): Promise<ProviderResult<TextEdit[]>> => {
         const params = {
           textDocument: { uri: model.uri.toString() },
           range: this.toLspRange(range),
@@ -34,7 +34,7 @@ export class RangeFormattingProvider extends BaseProvider {
           if (!result || !Array.isArray(result)) return null;
           return result.map((e: any) => ({
             range: this.fromLspRange(e.range),
-            text: e.text,
+            text: e.newText,
           }));
         } catch (err) {
           console.error('RangeFormattingProvider error:', err);

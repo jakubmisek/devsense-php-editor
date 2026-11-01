@@ -31,7 +31,8 @@ export class CodeLensProvider extends BaseProvider {
             lenses: result.map((l: any) => ({
               range: this.fromLspRange(l.range),
               id: l.id,
-              command: l.command ? { id: l.command.id, title: l.command.title, arguments: l.command.arguments } : undefined,
+              command: l.command ? { id: l.command.command ?? '', title: l.command.title, arguments: l.command.arguments } : undefined,
+              __lsp: l,
             })),
             dispose: () => { /* no-op */ },
           };
@@ -39,6 +40,16 @@ export class CodeLensProvider extends BaseProvider {
           console.error('CodeLensProvider error:', err);
           return null;
         }
+      },
+      resolveCodeLens: async (_model: any, lens: any, _token: CancellationToken): Promise<any> => {
+        if (lens.command || !lens.__lsp) return lens;
+        try {
+          const r = await this.router.sendRequest('codeLens/resolve', lens.__lsp);
+          if (r?.command) lens.command = { id: r.command.command ?? '', title: r.command.title, arguments: r.command.arguments };
+        } catch (err) {
+          console.error('CodeLensProvider resolve error:', err);
+        }
+        return lens;
       },
     };
     const disp = monaco.languages.registerCodeLensProvider(this.selector, provider);

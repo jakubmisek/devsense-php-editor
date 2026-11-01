@@ -62,7 +62,7 @@ export class DocumentSymbolProvider extends BaseProvider {
       21: this.monaco.SymbolKind.Null, 22: this.monaco.SymbolKind.EnumMember, 23: this.monaco.SymbolKind.Struct, 24: this.monaco.SymbolKind.Event,
       25: this.monaco.SymbolKind.Operator, 26: this.monaco.SymbolKind.TypeParameter,
     };
-    return map[k] ?? this.monaco.SymbolKind.Function;
+    return (k != null ? map[k] : undefined) ?? this.monaco.SymbolKind.Function;
   }
 
   private toSymbolTag(t?: number): any {

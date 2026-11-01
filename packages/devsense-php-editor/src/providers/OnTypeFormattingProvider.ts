@@ -40,7 +40,7 @@ export class OnTypeFormattingProvider extends BaseProvider {
           if (!result || !Array.isArray(result)) return null;
           return result.map((e: any) => ({
             range: this.fromLspRange(e.range),
-            text: e.text,
+            text: e.newText,
           }));
         } catch (err) {
           console.error('OnTypeFormattingProvider error:', err);

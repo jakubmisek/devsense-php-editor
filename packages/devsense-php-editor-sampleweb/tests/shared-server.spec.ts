@@ -43,7 +43,9 @@ test.describe('shared language server', () => {
         req(a, 2, 'textDocument/documentSymbol', { textDocument: { uri: uriA } }),
         req(b, 2, 'textDocument/documentSymbol', { textDocument: { uri: uriB } }),
       ]);
-      await new Promise((r) => setTimeout(r, 4000)); // diagnostics are pushed with delay
+      // Diagnostics are pushed lazily (1-3 s after the last change); wait up to 10 s.
+      const hasDiag = (c: any) => c.msgs.some((m: any) => m.method === 'textDocument/publishDiagnostics');
+      for (let i = 0; i < 40 && !(hasDiag(a) && hasDiag(b)); i++) await new Promise((r) => setTimeout(r, 250));
       const stats = await req(a, 3, '$/devsense/stats', {});
       const diagUris = (c: any) => c.msgs.filter((m: any) => m.method === 'textDocument/publishDiagnostics').map((m: any) => m.params.uri);
       const lsRequests = (c: any) => c.msgs.filter((m: any) => m.method && m.id != null).map((m: any) => m.method);
@@ -69,9 +71,8 @@ test.describe('shared language server', () => {
     // Diagnostics only ever reach the owner.
     expect(result.diagA.every((u: string) => u === result.uriA)).toBe(true);
     expect(result.diagB.every((u: string) => u === result.uriB)).toBe(true);
-    // NOTE: devsense-php-ls currently publishes no diagnostics for untitled-workspace-{id}://
-    // URIs (it does for file:// and untitled:), so we can only assert isolation here.
-    // See the fixme test below.
+    expect(result.diagA.length, 'client A received diagnostics for its syntax error').toBeGreaterThan(0);
+    expect(result.diagB.length, 'client B received diagnostics for its syntax error').toBeGreaterThan(0);
   });
 
   test('page reload does not re-initialize the language server', async ({ page }) => {
@@ -90,9 +91,5 @@ test.describe('shared language server', () => {
     expect(count).toBe(1);
   });
 
-  test.fixme('LS publishes diagnostics for untitled-workspace-{id}:// documents (server-side)', async () => {
-    // Verified directly against devsense-php-ls 1.0.19490 over stdio: a syntax error in
-    // file:///a.php or untitled:Untitled-1 yields publishDiagnostics; the same text in
-    // untitled-workspace-abc://untitled.php yields none.
-  });
+
 });

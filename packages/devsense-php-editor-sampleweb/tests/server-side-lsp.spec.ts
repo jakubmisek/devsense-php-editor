@@ -204,11 +204,10 @@ test.describe('devsense-php-ls server-side LSP investigation', () => {
 
   test('textDocument/hover at multiple positions', async () => {
     const hoverPositions = [
-      { line: 0, character: 5, label: 'foo (function name)' },
-      { line: 0, character: 9, label: 'strlen (function name)' },
-      { line: 0, character: 0, label: '<?php (keyword)' },
-      { line: 1, character: 0, label: 'function (keyword)' },
-      { line: 1, character: 12, label: '$x (parameter)' },
+      // TEST_CONTENT line 1: `function foo($x){return strlen($x);}`
+      { line: 1, character: 10, label: 'foo (function name)' },
+      { line: 1, character: 26, label: 'strlen (function name)' },
+      { line: 1, character: 14, label: '$x (parameter)' },
     ];
 
     let hoverFound = false;
@@ -231,7 +230,8 @@ test.describe('devsense-php-ls server-side LSP investigation', () => {
         try {
           const hr = await ls.request('textDocument/hover', {
             textDocument: { uri: TEST_URI },
-            position: pos,
+            // Send a clean LSP Position (no extra `label` field).
+            position: { line: pos.line, character: pos.character },
           });
           if (hr && hr.contents) {
             hoverFound = true;
@@ -250,9 +250,7 @@ test.describe('devsense-php-ls server-side LSP investigation', () => {
     } else {
       console.log(`Hover: FAIL - no contents at any position. Last error: ${lastError?.message}`);
     }
-    // Note: hover may fail server-side (JsonException on Position deserialization).
-    // This test documents the behavior; it does not fail the suite.
-    test.skip(!hoverFound, 'hover returns no contents at any tested position (server-side limitation)');
+    expect(!hoverFound, 'hover returns no contents at any tested position (server-side limitation)').toBe(false);
   });
 
   test('textDocument/rangeFormatting returns edits', async () => {

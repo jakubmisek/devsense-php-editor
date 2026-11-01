@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { setText } from './helpers';
 
 /**
  * textDocument/inlayHint E2E specs for devsense-php-editor-sampleweb.
@@ -7,7 +8,7 @@ import { test, expect } from '@playwright/test';
  * RPC router (InlayHintProvider in providers.browser.js).
  *
  * Each test is self-contained: it navigates to /, waits for the Monaco editor
- * to render, and skips gracefully if the PHP language server backend isn't
+ * to render, and fails if the PHP language server backend isn't
  * responding (port file unreachable).
  */
 test.describe('DEVSENSE PHP Editor - textDocument/inlayHint', () => {
@@ -20,10 +21,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/inlayHint', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(
-      !backendAvailable,
-      'devsense-php-ls backend not responding (no /php-editor-port)'
-    );
+    expect(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)').toBe(false);
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
@@ -34,18 +32,21 @@ test.describe('DEVSENSE PHP Editor - textDocument/inlayHint', () => {
   test('shows inlay hints for function call parameters', async ({ page }) => {
     await page.locator(EDITOR).click();
     // Type a PHP function call with parameters to trigger inlay hints.
-    await page.keyboard.insertText('<?php strlen("hello");');
+    await setText(page, '<?php\nfunction greet($name, $times) { return $name; }\ngreet("hi", 3);\n');
     // Wait for inlay hints to be requested and rendered.
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(4000);
 
     // Editor remains visible and content rendered.
     await expect(page.locator(EDITOR)).toBeVisible();
-    await expect(page.locator(EDITOR)).toContainText('strlen');
+    await expect(page.locator(EDITOR)).toContainText('greet');
 
-    // Assert inlay hint elements are visible if the backend returned any.
-    const hints = page.locator(INLAY_HINT);
-    const hintCount = await hints.count();
-    test.skip(hintCount === 0, 'no inlay hints rendered (backend may not return hints for this snippet)');
-    await expect(hints.first()).toBeVisible({ timeout: 10000 });
+    // Monaco renders inlay hints as injected text (before/after content) on model decorations;
+    // there is no stable DOM class, so read the injected labels from the editor.
+    await expect.poll(async () => page.evaluate(() => {
+      const ed = (window as any).monaco.editor.getEditors()[0];
+      return ed.getModel().getAllDecorations()
+        .map((d: any) => d.options.before?.content ?? d.options.after?.content ?? '')
+        .filter((c: string) => c.trim().length > 0).join('|');
+    }), { timeout: 10000, message: 'inlay hint labels injected into the editor' }).toMatch(/name|times/);
   });
 });
