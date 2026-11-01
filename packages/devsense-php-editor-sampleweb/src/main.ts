@@ -13,7 +13,10 @@ import './types';
 
 const SAMPLE_CODE = '<?php\n\nfunction foo($x) {\n  echo strlen($x);\n}\n';
 
-const WS_URL = window.PHP_EDITOR_WS_URL || 'ws://127.0.0.1:8765';
+/** Same-origin endpoint of the production server (server/production.js): wss:// behind TLS, ws:// otherwise. */
+function sameOriginWsUrl(): string {
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/lsp`;
+}
 
 /** Resolve the WebSocket URL to the PhpEditor server.
  *
@@ -27,7 +30,7 @@ const WS_URL = window.PHP_EDITOR_WS_URL || 'ws://127.0.0.1:8765';
  *   1. window.PHP_EDITOR_WS_URL (manual override)
  *   2. /php-editor-port port file served by Vite
  *   3. meta[name="php-editor-ws-url"] content
- *   4. hardcoded default ws://127.0.0.1:8765
+ *   4. same origin: ws(s)://<location.host>/lsp (production, see server/production.js)
  */
 async function resolveWsUrl(): Promise<string> {
   const override = window.PHP_EDITOR_WS_URL;
@@ -50,7 +53,7 @@ async function resolveWsUrl(): Promise<string> {
   const wsUrlFromMeta = document.querySelector('meta[name="php-editor-ws-url"]')?.getAttribute('content');
   if (wsUrlFromMeta) return wsUrlFromMeta;
 
-  return WS_URL;
+  return sameOriginWsUrl();
 }
 
 async function main(): Promise<void> {

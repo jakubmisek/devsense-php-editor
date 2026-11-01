@@ -24,7 +24,7 @@
     "@types/ws": "^8.18.0",
     "esbuild": "^0.25.2",
     "typescript": "^5.8.2",
-    "vscode-languageserver-protocol": "^3.17.5"
+    "vscode-languageserver-protocol": "~3.17.5"
   },
   "engines": {
     "node": ">=18"

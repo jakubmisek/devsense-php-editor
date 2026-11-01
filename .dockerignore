@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/dist-browser
+**/test-results
+**/playwright-report
+packages/devsense-php-editor-sampleweb/public
+.git
+*.log

@@ -28,6 +28,13 @@ export interface PhpEditorOptions {
   env?: Record<string, string>;
   /** Optional logger. */
   logger?: (msg: string) => void;
+  /**
+   * Attach the WebSocket endpoint to an existing HTTP(S) server (e.g. the one serving the static
+   * front end) instead of listening on `port`/`host`. The server must be (or become) listening.
+   */
+  server?: import('http').Server;
+  /** Accept WebSocket upgrades only on this path, e.g. `/lsp`. Default: any path. */
+  path?: string;
   /** File path to write the WS port for client discovery. */
   portFile?: string;
 }
@@ -94,7 +101,7 @@ export class PhpEditor {
     console.log('[PhpEditor] LS client created, starting WebSocket server...');
 
     // 2. Start the WebSocket server.
-    this.ws = new WsServer({ port: this.options.port, host: this.options.host });
+    this.ws = new WsServer({ port: this.options.port, host: this.options.host, server: this.options.server, path: this.options.path });
     const port = await this.ws.start();
     console.log('[PhpEditor] WebSocket server listening on ws://', this.options.host, ':', port);
     this.options.logger?.(`WebSocket server listening on ws://${this.options.host}:${port}`);
