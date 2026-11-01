@@ -10,6 +10,7 @@
  * devsense-php-ls language server via the PhpEditor server.
  */
 import * as monaco from 'monaco-editor';
+import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 import { ThemeManager } from './theme';
 import { PhpEditorUI } from './editor';
 
@@ -63,9 +64,9 @@ const monacoObj = (monaco as any).default ?? monaco;
   editor: monacoObj.editor,
   languages: monacoObj.languages,
   // Flatten commonly used enums/classes to top level for providers.browser.js
-  Position: monacoObj.editor.Position,
-  Range: monacoObj.editor.Range,
-  Selection: monacoObj.editor.Selection,
+  Position: monacoObj.Position,
+  Range: monacoObj.Range,
+  Selection: monacoObj.Selection,
   SymbolKind: monacoObj.languages.SymbolKind,
   SymbolTag: monacoObj.languages.SymbolTag,
   InlayHintKind: monacoObj.languages.InlayHintKind,
@@ -81,14 +82,10 @@ const monacoObj = (monaco as any).default ?? monaco;
 };
 
 // Configure Monaco Editor web worker paths before any editor creation
+// Monaco web workers bundled by Vite as ES module workers (`?worker`).
+// PHP only needs the generic editor worker (LSP features come from devsense-php-ls).
 (window as any).MonacoEnvironment = {
-  baseUrl: '/monaco-editor/',
-  getWorkerUrl: (moduleId: string, label: string) => {
-    if (label === 'editorWorkerService') {
-      return '/monaco-editor/vs/editor/editor.worker.js';
-    }
-    return `/monaco-editor/vs/${moduleId}`;
-  },
+  getWorker: (_moduleId: string, _label: string) => new EditorWorker(),
 };
 
 async function main(): Promise<void> {
