@@ -122,6 +122,8 @@ export class WsServer extends EventEmitter {
     }
   }
 
+  getClientIds(): string[] { return [...this.clients.keys()]; }
+
   getClient(clientId: string): WsClient | undefined {
     return this.clients.get(clientId);
   }

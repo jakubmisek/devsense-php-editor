@@ -243,7 +243,7 @@ export class PhpEditorUI {
     }
 
     if (method === 'textDocument/publishDiagnostics') {
-      const uri = params.textDocument?.uri;
+      const uri = params.uri; // LSP PublishDiagnosticsParams.uri
       if (uri && uri === this.virtualDocUri) {
         const markers = (params.diagnostics || []).map((d: any) => ({
           uri,

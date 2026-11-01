@@ -65,14 +65,13 @@ function greet(string $name): void {
     await page.keyboard.press('Control+Shift+O');
 
     // Assert the symbol picker overlay appeared.
-    const palette = page.locator('.monaco-editor .monaco-list:not([hidden])');
-    const paletteVisible = await palette.isVisible();
-    test.skip(!paletteVisible, 'document symbols palette did not appear (server-side limitation for sandboxed URIs)');
+    const palette = page.locator('.quick-input-widget .monaco-list');
+    await expect(palette.first()).toBeVisible({ timeout: 10000 });
 
     // Assert the expected symbols are listed.
-    await expect(page.locator('.monaco-editor')).toContainText('Calculator');
-    await expect(page.locator('.monaco-editor')).toContainText('add');
-    await expect(page.locator('.monaco-editor')).toContainText('subtract');
-    await expect(page.locator('.monaco-editor')).toContainText('greet');
+    await expect(palette.first()).toContainText('Calculator');
+    await expect(palette.first()).toContainText('add');
+    await expect(palette.first()).toContainText('subtract');
+    await expect(palette.first()).toContainText('greet');
   });
 });

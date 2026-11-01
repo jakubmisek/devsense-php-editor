@@ -102,6 +102,8 @@ export class PhpEditor {
     }
 
     this.router = new Router(client, this.ws, { initializationOptions });
+    // Single shared LS handshake, done once by the server worker.
+    await this.router.whenReady();
 
     // Write port to file for client discovery if configured.
     if (this.options.portFile) {
