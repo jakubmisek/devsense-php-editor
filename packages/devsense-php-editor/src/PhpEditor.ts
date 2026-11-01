@@ -4,15 +4,23 @@ import { LsServer } from './server/LsServer';
 import { WsServer } from './server/WsServer';
 import { Router } from './server/Router';
 import { VirtualWorkspace } from './workspace/VirtualWorkspace';
+import { resolveLicense, buildInitializationOptions } from './server/license';
 
 export interface PhpEditorOptions {
   /** WebSocket port (0 = random available port). Default 8765. */
   port?: number;
   /** Host to bind the WebSocket server to. Default '127.0.0.1'. */
   host?: string;
-  /** License key or JSON offline code. Falls back to DEVSENSE_PHP_LS_LICENSE env. */
+  /**
+   * devsense-php-ls licence unlocking premium features: the licence key, or the whole
+   * offline-activation `{JSON CODE}` string from https://www.devsense.com/purchase/validation.
+   * Sent as `initializationOptions["0"]` of the server-side `initialize` only; never sent to
+   * browser clients and never logged. Falls back to the DEVSENSE_PHP_LS_LICENSE env variable.
+   */
+  license?: string;
+  /** @deprecated Use `license`. */
   licenseKey?: string;
-  /** Extra initializationOptions passed to the LS `initialize` request. */
+  /** Extra initializationOptions passed to the LS `initialize` request (a `"0"` here is overridden by `license`). */
   initializationOptions?: Record<string, unknown>;
   /** Working directory for the LS process. */
   cwd?: string;
@@ -43,6 +51,7 @@ export class PhpEditor {
   private ws: WsServer | null = null;
   private router: Router | null = null;
   private initialized = false;
+  private licensed = false;
   private readonly options: PhpEditorOptions;
 
   constructor(options: PhpEditorOptions = {}) {
@@ -91,17 +100,13 @@ export class PhpEditor {
     this.options.logger?.(`WebSocket server listening on ws://${this.options.host}:${port}`);
 
     // 3. Wire up the router between WS clients and the LS.
-    const licenseKey = this.options.licenseKey ?? process.env.DEVSENSE_PHP_LS_LICENSE;
-    const initializationOptions: Record<string, unknown> = {};
-    if (licenseKey) {
-      initializationOptions['0'] = licenseKey;
-      console.log('[PhpEditor] License key provided via initializationOptions');
-    }
-    if (this.options.initializationOptions) {
-      Object.assign(initializationOptions, this.options.initializationOptions);
-    }
+    // Licence: `license` option > deprecated `licenseKey` > DEVSENSE_PHP_LS_LICENSE. Never logged.
+    const license = resolveLicense(this.options.license ?? this.options.licenseKey);
+    this.licensed = license !== undefined;
+    const initializationOptions = buildInitializationOptions(license, this.options.initializationOptions);
+    console.log('[PhpEditor] Premium licence:', this.licensed ? 'configured' : 'not configured');
 
-    this.router = new Router(client, this.ws, { initializationOptions });
+    this.router = new Router(client, this.ws, { initializationOptions, secrets: license ? [license] : [], licensed: this.licensed });
     // Single shared LS handshake, done once by the server worker.
     await this.router.whenReady();
 
@@ -180,6 +185,11 @@ export class PhpEditor {
   }
 
   /** Whether start() has completed successfully. */
+  /** True when a licence (option or DEVSENSE_PHP_LS_LICENSE) was configured. Not a validation result. */
+  isLicensed(): boolean {
+    return this.licensed;
+  }
+
   isRunning(): boolean {
     return this.initialized && this.ls?.isRunning() === true;
   }

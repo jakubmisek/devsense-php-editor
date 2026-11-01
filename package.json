@@ -10,6 +10,7 @@
     "build": "npm run build -w packages/devsense-php-editor && npm run build -w packages/devsense-php-editor-sampleweb",
     "dev": "npm run dev -w packages/devsense-php-editor-sampleweb",
     "test": "npm test -w packages/devsense-php-editor-sampleweb",
-    "typecheck": "npm run typecheck -w packages/devsense-php-editor && npm run typecheck -w packages/devsense-php-editor-sampleweb"
+    "typecheck": "npm run typecheck -w packages/devsense-php-editor && npm run typecheck -w packages/devsense-php-editor-sampleweb",
+    "test:unit": "npm test -w packages/devsense-php-editor"
   }
 }

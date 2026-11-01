@@ -11,7 +11,8 @@
     "build": "node build.js",
     "start": "node dist/index.js",
     "prepare": "node build.js",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p test",
+    "test": "node test/run-unit.js"
   },
   "dependencies": {
     "devsense-php-ls": "^1.0.19468",
