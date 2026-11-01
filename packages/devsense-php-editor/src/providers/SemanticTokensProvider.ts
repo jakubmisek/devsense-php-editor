@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { SemanticTokens, SemanticTokensLegend, Position, CancellationToken, ProviderResult, Range } from 'monaco-editor';
 
 export interface SemanticTokensProviderOptions {
   selector: any;
@@ -16,7 +15,7 @@ export class SemanticTokensProvider extends BaseProvider {
   private readonly legend: SemanticTokensLegend;
 
   constructor(router: any, options: SemanticTokensProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
     this.legend = options.legend;
   }
 

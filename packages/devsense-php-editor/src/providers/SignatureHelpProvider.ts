@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { SignatureHelpResult, SignatureHelp, SignatureInformation, ParameterInformation, Position, CancellationToken, ProviderResult } from 'monaco-editor';
 
 export interface SignatureHelpProviderOptions {
   selector: any;
@@ -18,7 +17,7 @@ export class SignatureHelpProvider extends BaseProvider {
   private readonly retriggerCharacters: string[];
 
   constructor(router: any, options: SignatureHelpProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
     this.triggerCharacters = options.triggerCharacters ?? ['(', ',', '<'];
     this.retriggerCharacters = options.retriggerCharacters ?? [',', ')'];
   }

@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { InlayHintList, InlayHint, InlayHintKind, Position, CancellationToken, ProviderResult, Range, TextEdit, Location } from 'monaco-editor';
 
 export interface InlayHintsProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface InlayHintsProviderOptions {
 
 export class InlayHintsProvider extends BaseProvider {
   constructor(router: any, options: InlayHintsProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

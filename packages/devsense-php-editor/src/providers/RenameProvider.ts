@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { Position, CancellationToken, ProviderResult, Range } from 'monaco-editor';
 
 export interface RenameProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface RenameProviderOptions {
 
 export class RenameProvider extends BaseProvider {
   constructor(router: any, options: RenameProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

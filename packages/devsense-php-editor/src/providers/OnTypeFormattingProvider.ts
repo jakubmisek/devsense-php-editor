@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { TextEdit, FormattingOptions, Position, CancellationToken, ProviderResult } from 'monaco-editor';
 
 export interface OnTypeFormattingProviderOptions {
   selector: any;
@@ -16,7 +15,7 @@ export class OnTypeFormattingProvider extends BaseProvider {
   private readonly autoFormatTriggerCharacters: string[];
 
   constructor(router: any, options: OnTypeFormattingProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
     this.autoFormatTriggerCharacters = options.autoFormatTriggerCharacters ?? ['}', ')', ';'];
   }
 

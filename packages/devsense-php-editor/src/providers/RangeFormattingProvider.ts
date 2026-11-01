@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { TextEdit, FormattingOptions, Position, CancellationToken, ProviderResult, Range } from 'monaco-editor';
 
 export interface RangeFormattingProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface RangeFormattingProviderOptions {
 
 export class RangeFormattingProvider extends BaseProvider {
   constructor(router: any, options: RangeFormattingProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

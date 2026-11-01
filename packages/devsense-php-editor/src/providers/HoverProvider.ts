@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { Hover, Position, CancellationToken, ProviderResult, Range, IMarkdownString } from 'monaco-editor';
 
 export interface HoverProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface HoverProviderOptions {
 
 export class HoverProvider extends BaseProvider {
   constructor(router: any, options: HoverProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { CodeLensList, CodeLens, Command, Position, CancellationToken, ProviderResult, Range } from 'monaco-editor';
 
 export interface CodeLensProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface CodeLensProviderOptions {
 
 export class CodeLensProvider extends BaseProvider {
   constructor(router: any, options: CodeLensProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

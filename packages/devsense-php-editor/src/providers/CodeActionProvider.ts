@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { CodeAction, Command, Position, CancellationToken, ProviderResult, Range } from 'monaco-editor';
 
 export interface CodeActionProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface CodeActionProviderOptions {
 
 export class CodeActionProvider extends BaseProvider {
   constructor(router: any, options: CodeActionProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

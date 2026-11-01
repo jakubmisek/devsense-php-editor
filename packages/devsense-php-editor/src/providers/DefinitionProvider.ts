@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { Definition, Location, Position, CancellationToken, ProviderResult } from 'monaco-editor';
 
 export interface DefinitionProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface DefinitionProviderOptions {
 
 export class DefinitionProvider extends BaseProvider {
   constructor(router: any, options: DefinitionProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

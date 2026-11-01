@@ -4,16 +4,13 @@
  * Each provider wraps an LSP request method and maps between Monaco Editor
  * provider interfaces and devsense-php-ls LSP requests/responses through
  * the Router (which exposes promise-based sendRequest).
+ *
+ * Monaco is injected via the constructor. The actual Monaco object comes
+ * from window.monaco (loaded via AMD loader), not from importing 'monaco-editor'
+ * at build time (which breaks because monaco-editor's ESM doesn't export types).
  */
 import { Router } from '../server/Router';
-import { CancellationToken, Position, Range, Location, ProviderResult } from 'monaco-editor';
 
-/**
- * Minimal Monaco API surface used by providers.
- * Imported from 'monaco-editor' at runtime via the consumer (sampleweb).
- * Here we only reference types structurally; the actual Monaco object is
- * injected by the consumer when registering providers.
- */
 export interface MonacoLanguageApi {
   registerCompletionItemProvider(selector: any, provider: any): { dispose(): void };
   registerHoverProvider(selector: any, provider: any): { dispose(): void };
@@ -37,11 +34,13 @@ export abstract class BaseProvider {
   protected readonly languageId: string;
   protected readonly selector: any;
   protected disposables: Array<{ dispose(): void }> = [];
+  protected readonly monaco: any;
 
-  constructor(router: Router, languageId: string, selector: any) {
+  constructor(router: Router, languageId: string, selector: any, monaco: any) {
     this.router = router;
     this.languageId = languageId;
     this.selector = selector;
+    this.monaco = monaco;
   }
 
   /**
@@ -57,11 +56,11 @@ export abstract class BaseProvider {
   }
 
   /** Convert an LSP position { line, character } to Monaco Position. */
-  protected fromLspPosition(pos: { line: number; character: number }): Position {
-    return new Position(pos.line + 1, pos.character + 1);
+  protected fromLspPosition(pos: { line: number; character: number }): any {
+    return new this.monaco.Position(pos.line + 1, pos.character + 1);
   }
 
-  /** Convert a Monaco Range to LSP range { start, end }. */
+  /** Convert an LSP range to LSP range { start, end }. */
   protected toLspRange(range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): { start: { line: number; character: number }; end: { line: number; character: number } } {
     return {
       start: this.toLspPosition({ lineNumber: range.startLineNumber, column: range.startColumn }),
@@ -70,8 +69,8 @@ export abstract class BaseProvider {
   }
 
   /** Convert an LSP range to Monaco Range. */
-  protected fromLspRange(range: { start: { line: number; character: number }; end: { line: number; character: number } }): Range {
-    return new Range(
+  protected fromLspRange(range: { start: { line: number; character: number }; end: { line: number; character: number } }): any {
+    return new this.monaco.Range(
       range.start.line + 1,
       range.start.character + 1,
       range.end.line + 1,
@@ -80,7 +79,7 @@ export abstract class BaseProvider {
   }
 
   /** Convert an LSP Location to Monaco Location. */
-  protected fromLspLocation(loc: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }): Location {
+  protected fromLspLocation(loc: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }): any {
     return { uri: loc.uri, range: this.fromLspRange(loc.range) };
   }
 

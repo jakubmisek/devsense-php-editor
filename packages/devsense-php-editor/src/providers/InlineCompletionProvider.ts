@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { InlineCompletions, InlineCompletion, InlineCompletionContext, Position, CancellationToken, ProviderResult } from 'monaco-editor';
 
 export interface InlineCompletionProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface InlineCompletionProviderOptions {
 
 export class InlineCompletionProvider extends BaseProvider {
   constructor(router: any, options: InlineCompletionProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

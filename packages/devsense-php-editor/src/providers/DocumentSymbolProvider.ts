@@ -4,7 +4,6 @@
  */
 import { BaseProvider } from './base';
 import { MonacoLanguageApi } from './base';
-import { DocumentSymbol, SymbolKind, SymbolTag, Position, CancellationToken, ProviderResult, Range } from 'monaco-editor';
 
 export interface DocumentSymbolProviderOptions {
   selector: any;
@@ -13,7 +12,7 @@ export interface DocumentSymbolProviderOptions {
 
 export class DocumentSymbolProvider extends BaseProvider {
   constructor(router: any, options: DocumentSymbolProviderOptions) {
-    super(router, options.languageId, options.selector);
+    super(router, options.languageId, options.selector, options.monaco);
   }
 
   register(monaco: MonacoLanguageApi): void {

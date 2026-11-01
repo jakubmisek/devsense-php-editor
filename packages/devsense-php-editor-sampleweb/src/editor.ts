@@ -1,21 +1,15 @@
 /**
  * Monaco Editor setup + LSP provider wiring.
  *
- * Creates the editor, opens a single virtual PHP document
- * `untitled-workspace-{id}://untitled`, registers all LSP-backed providers
- * (loaded from the browser-safe providers bundle), and routes diagnostics
- * from the WebSocket into the model markers.
- *
- * Connects to a devsense-php-editor PhpEditor WebSocket server.
- *
- * Monaco Editor is imported directly and bundled locally.
+ * Monaco Editor is injected via the constructor (loaded via AMD loader
+ * from /public/monaco-editor/ in index.html), not imported directly.
+ * This keeps monaco-editor as a browser-loaded dependency, not a bundled one.
  */
-import * as monaco from 'monaco-editor';
 import { WsClient } from './ws-client';
 import { DiagnosticsPanel } from './diagnostics';
 import { ThemeManager } from './theme';
 
-// Browser-safe LSP providers (built from providers/browser-index.ts).
+// Browser-safe LSP providers (built from providers.browser.js).
 // These forward LSP requests through the WebSocket to devsense-php-ls.
 import {
   CompletionProvider,
@@ -39,18 +33,21 @@ export interface EditorOptions {
   wsUrl: string;
   containerId: string;
   initialContent?: string;
+  monaco: any;
 }
 
 export class PhpEditorUI {
   private ws: WsClient;
-  private editor: monaco.editor.IStandaloneCodeEditor | null = null;
-  private model: monaco.editor.ITextModel | null = null;
+  private editor: any = null;
+  private model: any = null;
   private diagnostics: DiagnosticsPanel;
   private theme: ThemeManager;
   private providers: Array<{ dispose(): void }> = [];
   private virtualDocUri: string = '';
+  private readonly monaco: any;
 
   constructor(opts: EditorOptions) {
+    this.monaco = opts.monaco;
     this.ws = new WsClient(opts.wsUrl);
     this.diagnostics = new DiagnosticsPanel();
     this.theme = new ThemeManager();
@@ -65,7 +62,8 @@ export class PhpEditorUI {
     const container = document.getElementById(containerId);
     if (!container) throw new Error(`Container #${containerId} not found`);
 
-    this.editor = monaco.editor.create(container, {
+    console.log('[editor] Creating Monaco Editor...');
+    this.editor = this.monaco.editor.create(container, {
       value: initialContent ?? '<?php\n\n// Hello from DEVSENSE PHP Editor\n\nfunction greet(string $name): void {\n    echo "Hello, " . $name;\n}\n',
       language: 'php',
       theme: this.theme.getTheme() === 'dark' ? 'vs-dark' : 'vs',
@@ -76,23 +74,25 @@ export class PhpEditorUI {
 
     DiagnosticsPanel.injectStyles();
 
-    monaco.languages.register({ id: 'php', extensions: ['.php'], aliases: ['PHP'] });
+    this.monaco.languages.register({ id: 'php', extensions: ['.php'], aliases: ['PHP'] });
 
     // Create virtual document model with untitled-workspace schema.
     // The real client id is assigned by the server; we'll learn it after
     // initialize and recreate the model with the correct URI.
-    this.model = monaco.editor.createModel(
+    this.model = this.monaco.editor.createModel(
       initialContent ?? '<?php\n\n// Hello from DEVSENSE PHP Editor\n',
       'php',
-      monaco.Uri.parse('untitled-workspace-client://untitled.php')
+      this.monaco.Uri.parse('untitled-workspace-client://untitled.php')
     );
     this.editor.setModel(this.model);
     this.virtualDocUri = this.model.uri.toString();
 
+    console.log('[editor] Model created:', this.virtualDocUri);
+
     await this.performInitialize();
     this.registerProviders();
 
-    this.editor.onDidChangeModelContent((e) => {
+    this.editor.onDidChangeModelContent((e: any) => {
       this.ws.sendNotification('textDocument/didChange', {
         textDocument: { uri: this.virtualDocUri, version: this.model?.getVersionId() ?? 0 },
         contentChanges: [{ text: this.model?.getValue() ?? '' }],
@@ -101,6 +101,7 @@ export class PhpEditorUI {
   }
 
   private async performInitialize(): Promise<void> {
+    console.log('[editor] Sending initialize to WS server...');
     const result = await this.ws.sendRequest('initialize', {
       processId: 1,
       rootUri: null,
@@ -126,8 +127,9 @@ export class PhpEditorUI {
       initializationOptions: {},
     });
 
-    this.ws.sendNotification('initialized', {});
+    console.log('[editor] Initialize result:', result);
 
+    this.ws.sendNotification('initialized', {});
     this.ws.sendNotification('textDocument/didOpen', {
       textDocument: {
         uri: this.virtualDocUri,
@@ -141,7 +143,7 @@ export class PhpEditorUI {
   private registerProviders(): void {
     const selector = { language: 'php' };
     const ws = this.ws as any;
-    const lang = monaco.languages;
+    const lang = this.monaco.languages;
 
     const providers = [
       new CompletionProvider(ws, { selector, languageId: 'php' }),
@@ -165,6 +167,7 @@ export class PhpEditorUI {
       p.register(lang);
       this.providers.push(p);
     }
+    console.log('[editor]', providers.length, 'providers registered');
   }
 
   private handleServerMessage(message: any): void {
@@ -188,7 +191,7 @@ export class PhpEditorUI {
         this.diagnostics.setDiagnostics(uri, markers);
 
         if (this.model) {
-          monaco.editor.setModelMarkers(this.model, 'devsense-php-ls', markers.map((m: any) => ({
+          this.monaco.editor.setModelMarkers(this.model, 'devsense-php-ls', markers.map((m: any) => ({
             startLineNumber: m.startLineNumber,
             startColumn: m.startColumn,
             endLineNumber: m.endLineNumber,
