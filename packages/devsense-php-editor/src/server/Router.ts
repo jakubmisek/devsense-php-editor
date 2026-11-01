@@ -1,17 +1,22 @@
 import type * as lsp from 'vscode-languageserver-protocol';
 import { LspClient, JsonRpcMessage, isJsonRpcMessage } from '../lsp/client';
 import { WsServer, WsClient } from './WsServer';
+import { redactSecrets } from './license';
 
 export interface RouterOptions {
   /** initializationOptions (e.g. { "0": license }) merged into the LS `initialize`. */
   initializationOptions?: Record<string, unknown>;
   /** Capabilities advertised to the LS in the single real `initialize`. */
   clientCapabilities?: lsp.ClientCapabilities;
+  /** Secret values (e.g. the licence) that must never reach clients; redacted from anything derived from the handshake. */
+  secrets?: string[];
+  /** Non-secret flag reported by `$/devsense/stats` (whether a licence is configured). */
+  licensed?: boolean;
 }
 
 /** Client-side capabilities sent in the one real `initialize` (browser Monaco feature set). */
 const DEFAULT_CLIENT_CAPABILITIES: lsp.ClientCapabilities = {
-  workspace: { configuration: true, workspaceFolders: false, didChangeConfiguration: { dynamicRegistration: true } },
+  workspace: { applyEdit: true, workspaceEdit: { documentChanges: true }, executeCommand: {}, configuration: true, workspaceFolders: false, didChangeConfiguration: { dynamicRegistration: true } },
   textDocument: {
     synchronization: { didSave: false, dynamicRegistration: false },
     completion: { completionItem: { snippetSupport: true, documentationFormat: ['markdown', 'plaintext'] }, contextSupport: true, completionList: { itemDefaults: ['editRange', 'insertTextFormat', 'commitCharacters', 'data'] } },
@@ -46,12 +51,17 @@ export class Router {
   private readonly options: RouterOptions;
 
   /** LS request id -> originating client + original id. */
-  private pending = new Map<number, { clientId: string; originalId: string | number }>();
+  private pending = new Map<number, { clientId: string; originalId: string | number; method: string }>();
   /** Workspace/document URI prefix -> clientId. */
   private uriToClient = new Map<string, string>();
   /** Router-originated requests awaiting responses. */
   private pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
   private nextRequestId = 1;
+  /** LS -> client requests forwarded to a browser: client-visible id -> owner + LS id. */
+  private forwardedLsRequests = new Map<string, { clientId: string; lsId: string | number }>();
+  private nextForwardId = 1;
+  /** Clients with an in-flight `workspace/executeCommand` (LS window/showMessage goes to them). */
+  private executingClients: string[] = [];
   private initResult: lsp.InitializeResult | null = null;
   private ready: Promise<lsp.InitializeResult>;
   /** Count of `initialize` requests actually sent to the LS (for diagnostics/tests). */
@@ -89,7 +99,11 @@ export class Router {
   }
 
   private sendToClient(clientId: string, message: JsonRpcMessage): void {
-    this.ws.sendTo(clientId, message);
+    this.ws.sendTo(clientId, redactSecrets(message, this.options.secrets ?? []));
+  }
+
+  private broadcast(message: JsonRpcMessage): void {
+    this.ws.broadcast(redactSecrets(message, this.options.secrets ?? []));
   }
 
   /** A WS client sent a JSON-RPC message. */
@@ -114,12 +128,21 @@ export class Router {
     if (method === 'initialized' || method === 'exit') return;
     // Introspection for tests/monitoring: how many real initialize requests hit the LS.
     if (method === '$/devsense/stats' && isRequest) {
-      this.sendToClient(client.id, { jsonrpc: '2.0', id: replyId, result: { lsInitializeCount: this.lsInitializeCount, clientId: client.id, clients: this.ws.getClientIds() } });
+      this.sendToClient(client.id, { jsonrpc: '2.0', id: replyId, result: { lsInitializeCount: this.lsInitializeCount, clientId: client.id, clients: this.ws.getClientIds(), licensed: this.options.licensed === true } });
       return;
     }
 
-    // Response from the client to an LS request: we answer those ourselves.
-    if (method == null) return;
+    // Response from a client to an LS request we forwarded (workspace/applyEdit).
+    if (method == null) {
+      const fwd = typeof id === 'string' ? this.forwardedLsRequests.get(id) : undefined;
+      if (fwd && fwd.clientId === client.id) {
+        this.forwardedLsRequests.delete(id as string);
+        this.ls.send(data.error
+          ? { jsonrpc: '2.0', id: fwd.lsId, result: { applied: false, failureReason: data.error.message } }
+          : { jsonrpc: '2.0', id: fwd.lsId, result: data.result ?? { applied: false } });
+      }
+      return;
+    }
 
     // Claim ownership of any document the client touches.
     const uri = (data.params as Partial<lsp.TextDocumentPositionParams> | undefined)?.textDocument?.uri;
@@ -128,7 +151,8 @@ export class Router {
     const forward = () => {
       if (isRequest) {
         const lsId = this.nextRequestId++;
-        this.pending.set(lsId, { clientId: client.id, originalId: id as string | number });
+        this.pending.set(lsId, { clientId: client.id, originalId: id as string | number, method });
+        if (method === 'workspace/executeCommand') this.executingClients.push(client.id);
         this.ls.send({ ...data, id: lsId });
       } else {
         this.ls.send(data);
@@ -139,6 +163,11 @@ export class Router {
   }
 
   private handleDisconnect(clientId: string): void {
+    for (const [key, fwd] of this.forwardedLsRequests) {
+      if (fwd.clientId !== clientId) continue;
+      this.forwardedLsRequests.delete(key);
+      this.ls.send({ jsonrpc: '2.0', id: fwd.lsId, result: { applied: false, failureReason: 'client disconnected' } });
+    }
     for (const [uri, owner] of this.uriToClient) {
       if (owner !== clientId) continue;
       if (!uri.endsWith('://')) this.ls.send({ jsonrpc: '2.0', method: 'textDocument/didClose', params: { textDocument: { uri } } });
@@ -147,6 +176,7 @@ export class Router {
     for (const [lsId, p] of this.pending) {
       if (p.clientId === clientId) {
         this.pending.delete(lsId);
+        this.executingClients = this.executingClients.filter((c) => c !== clientId);
         this.ls.send({ jsonrpc: '2.0', method: '$/cancelRequest', params: { id: lsId } });
       }
     }
@@ -157,6 +187,7 @@ export class Router {
 
     // LS -> client request: answer on the server side.
     if (message.method && message.id != null) {
+      if (message.method === 'workspace/applyEdit' && this.forwardApplyEdit(message)) return;
       this.ls.send({ jsonrpc: '2.0', id: message.id, result: this.answerServerRequest(message) });
       return;
     }
@@ -173,6 +204,11 @@ export class Router {
       const p = typeof message.id === 'number' ? this.pending.get(message.id) : undefined;
       if (p) {
         this.pending.delete(message.id as number);
+        // Deliver after any window/showMessage the command produced.
+        if (p.method === 'workspace/executeCommand') {
+          const i = this.executingClients.indexOf(p.clientId);
+          if (i >= 0) this.executingClients.splice(i, 1);
+        }
         this.sendToClient(p.clientId, { ...message, id: p.originalId });
       }
       return;
@@ -186,10 +222,39 @@ export class Router {
       return;
     }
 
+    // A message produced by a command (e.g. the "(PREMIUM)" notice) goes to the client that ran it.
+    if (message.method === 'window/showMessage' && this.executingClients.length > 0) {
+      this.sendToClient(this.executingClients[0], message);
+      return;
+    }
+
     if (message.method === 'window/logMessage' || message.method === '$/progress' || message.method === 'telemetry/event') {
       return; // server-side only
     }
-    this.ws.broadcast(message);
+    this.broadcast(message);
+  }
+
+  /**
+   * Forward an LS `workspace/applyEdit` to the client owning the edited document(s)
+   * (code actions resolved via `workspace/executeCommand` apply their edits this way).
+   * Returns false when no single owning client exists; the caller then answers `{ applied: false }`.
+   */
+  private forwardApplyEdit(message: JsonRpcMessage): boolean {
+    const edit = (message.params as lsp.ApplyWorkspaceEditParams | undefined)?.edit;
+    if (!edit) return false;
+    const uris = new Set<string>(Object.keys(edit.changes ?? {}));
+    for (const dc of edit.documentChanges ?? []) {
+      if ('textDocument' in dc) uris.add(dc.textDocument.uri);
+      else return false; // file create/rename/delete are not supported in the browser
+    }
+    const owners = new Set([...uris].map((u) => this.getClientForUri(u)));
+    if (owners.size !== 1) return false;
+    const [clientId] = [...owners];
+    if (!clientId) return false;
+    const key = `ls:${this.nextForwardId++}`;
+    this.forwardedLsRequests.set(key, { clientId, lsId: message.id as string | number });
+    this.sendToClient(clientId, { jsonrpc: '2.0', id: key, method: message.method, params: message.params });
+    return true;
   }
 
   private answerServerRequest(message: JsonRpcMessage): unknown {

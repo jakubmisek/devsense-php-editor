@@ -63,6 +63,7 @@ async function main(): Promise<void> {
       </header>
       <main class="content">
         <div id="editor-container"></div>
+        <div id="server-message" class="server-message" role="status" hidden></div>
       </main>
     </div>
   `;
@@ -91,6 +92,12 @@ async function main(): Promise<void> {
 
     .content { flex: 1; overflow: hidden; position: relative; }
     #editor-container { width: 100%; height: 100%; }
+    .server-message {
+      position: absolute; top: 12px; right: 16px; max-width: 420px; z-index: 50;
+      padding: 8px 12px; border-radius: 6px; font-size: 13px;
+      background: var(--theme-surface); color: var(--theme-fg); border: 1px solid var(--theme-border);
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
   `;
   style.textContent += THEME_SWITCH_CSS;
   document.head.appendChild(style);
@@ -110,7 +117,16 @@ async function main(): Promise<void> {
     theme: toEditorTheme(theme.getTheme()),
   });
   phpEditor.onDiagnostics((list) => diagnostics.setDiagnostics(phpEditor.getDocumentUri(), list));
-  phpEditor.onServerMessage((m) => console.log('[LS]', m.type, m.message));
+  // Messages from the language server (e.g. the notice shown by a "(PREMIUM)" code action without a licence).
+  const toast = document.getElementById('server-message')!;
+  let toastTimer: number | undefined;
+  phpEditor.onServerMessage((m) => {
+    console.log('[LS]', m.type, m.message);
+    toast.textContent = m.message;
+    toast.hidden = false;
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => { toast.hidden = true; }, 6000);
+  });
   phpEditor.ready.catch((err: Error) => console.warn('[main] Language server unavailable (editing still works):', err.message));
 
   // Test hooks for Playwright.

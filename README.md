@@ -63,12 +63,12 @@ diagnostics for. The diagnostics are real server output.
 | `DefinitionProvider` | `textDocument/definition` |
 | `ReferencesProvider` | `textDocument/references` |
 | `DocumentSymbolProvider` | `textDocument/documentSymbol` |
-| `CodeActionProvider` | `textDocument/codeAction` |
+| `CodeActionProvider` | `textDocument/codeAction` (+ `codeAction/resolve`; commands run via `workspace/executeCommand`, server edits arrive as `workspace/applyEdit`). Premium, see [Premium features & licensing](#premium-features--licensing) |
 | `FormattingProvider` | Format Document, sent as `textDocument/rangeFormatting` over the whole document (the server has no `textDocument/formatting`) |
 | `RangeFormattingProvider` | `textDocument/rangeFormatting` |
 | `OnTypeFormattingProvider` | `textDocument/onTypeFormatting` |
 | `SemanticTokensProvider` | `textDocument/semanticTokens/full` |
-| `InlineCompletionProvider` | `textDocument/inlineCompletion` (needs a licence, see below) |
+| `InlineCompletionProvider` | `textDocument/inlineCompletion` (premium, see [Premium features & licensing](#premium-features--licensing)) |
 | `InlayHintsProvider` | `textDocument/inlayHint` |
 | `CodeLensProvider` | `textDocument/codeLens` (+ `codeLens/resolve`) |
 | `RenameProvider` | `textDocument/rename` |
@@ -120,8 +120,9 @@ import { PhpEditor, type PhpEditorOptions } from 'devsense-php-editor';
 | --- | --- | --- | --- |
 | `port` | `number` | `8765` | WebSocket port. `0` picks a free port. |
 | `host` | `string` | `'127.0.0.1'` | Interface the WebSocket server binds to. |
-| `licenseKey` | `string` | `process.env.DEVSENSE_PHP_LS_LICENSE` | DEVSENSE licence key or JSON offline activation code, passed as `initializationOptions["0"]`. |
-| `initializationOptions` | `Record<string, unknown>` | – | Extra options merged into the language server `initialize`. |
+| `license` | `string` | `process.env.DEVSENSE_PHP_LS_LICENSE` | Licence key, or the whole offline-activation `{JSON CODE}` string. Sent only in the server's own `initialize` as `initializationOptions["0"]`. Never sent to browsers, never logged. See [Premium features & licensing](#premium-features--licensing). |
+| `licenseKey` | `string` | – | Deprecated alias of `license`. |
+| `initializationOptions` | `Record<string, unknown>` | – | Extra options merged into the language server `initialize`. A `"0"` here is overridden by `license`. |
 | `cwd` | `string` | – | Working directory of the `devsense-php-ls` process. |
 | `env` | `Record<string, string>` | – | Extra environment variables for the `devsense-php-ls` process (merged over `process.env`). |
 | `logger` | `(msg: string) => void` | – | Optional log callback. |
@@ -136,6 +137,7 @@ Methods:
 | `getPort()` | `number \| null` |
 | `getUrl()` | `string \| null`, e.g. `ws://127.0.0.1:8765` |
 | `isRunning()` | `boolean` |
+| `isLicensed()` | `boolean`: a licence was configured (option or env). This doesn't check that the licence is valid. |
 | `getWsServer()`, `getLsServer()`, `getRouter()` | Internal parts, for advanced use and tests. |
 
 `PhpEditor` runs its **own** WebSocket server on `host:port`. It doesn't attach to an existing `http.Server`. Run it next
@@ -148,7 +150,7 @@ import { PhpEditor } from 'devsense-php-editor';
 const editor = new PhpEditor({
   port: 8765,
   host: '127.0.0.1',
-  licenseKey: process.env.DEVSENSE_PHP_LS_LICENSE, // optional; this is also the default
+  license: process.env.DEVSENSE_PHP_LS_LICENSE, // optional; this is also the default
   logger: (msg) => console.log('[php-editor]', msg),
 });
 
@@ -250,10 +252,58 @@ See [Bundler requirements & limitations](#bundler-requirements--limitations) bef
 | `CI` | Playwright | When set, Playwright never reuses an already running dev server. |
 | `window.PHP_EDITOR_WS_URL` | Sample web app (browser) | Overrides the WebSocket URL the sample connects to. |
 
-**Licence note:** the editor features work without a licence, but some premium features of `devsense-php-ls` need one.
-In particular `textDocument/inlineCompletion` returns `null` in every case we tried without a licence. The client
-provider is implemented, but ghost text appears only with a licensed (and possibly AI-enabled) server. Set
-`DEVSENSE_PHP_LS_LICENSE` or pass `licenseKey`.
+Premium features need a licence. See [Premium features & licensing](#premium-features--licensing).
+
+## Premium features & licensing
+
+[`devsense-php-ls`](https://www.npmjs.com/package/devsense-php-ls) is freemium. Its README is linked here as its
+agreement requires. Everything in this repo works without a licence. Some features are locked until a licence is
+configured:
+
+- **Code actions and quick fixes.** They're listed, but every title ends with `(PREMIUM)`. Examples are
+  `Add __construct ... (PREMIUM)`, `Add missing /** ... (PREMIUM)` and `Short array syntax [] (PREMIUM)`. Running one
+  runs the server's `devsense:showMessage` command. That command answers with a `window/showMessage`:
+  "Code Actions and Quick Fixes are available to licensed users". The editor passes it to `onServerMessage`, and the
+  sample shows it as a toast.
+- **Inline completion.** `textDocument/inlineCompletion` returns `null` without a licence.
+- **Other premium features.** See the [devsense-php-ls page](https://www.npmjs.com/package/devsense-php-ls) and the
+  [DEVSENSE docs](https://docs.devsense.com/).
+
+**Getting a licence.** Buy one at [devsense.com/purchase](https://www.devsense.com/purchase). With an Internet
+connection the language server activates the **licence key** itself at startup. For offline activation, validate the
+licence at [devsense.com/purchase/validation](https://www.devsense.com/purchase/validation) to get a **`{JSON CODE}`**.
+Use that whole JSON text as the value, as a string; don't parse it.
+
+**Unlocking premium features.** Set the environment variable of the Node process running `PhpEditor`:
+
+```bash
+DEVSENSE_PHP_LS_LICENSE='<licence key or {JSON CODE}>' npm run dev
+```
+
+Or pass it in code, for example from your own secret store:
+
+```ts
+const editor = new PhpEditor({ license: await secrets.get('devsense-php-ls') });
+await editor.start();
+editor.isLicensed(); // true (configured; validity is up to the language server)
+```
+
+Precedence: the `license` option, then the deprecated `licenseKey`, then `DEVSENSE_PHP_LS_LICENSE`. Blank values count
+as "no licence". The value goes into `initializationOptions["0"]` of the single real `initialize`, which `PhpEditor`
+sends to `devsense-php-ls`. It overrides any `"0"` in `initializationOptions`.
+
+**Security: the licence stays on the server.**
+- Browsers never send the real `initialize`. A client's `initialize`, including any `initializationOptions` it carries
+  (a `"0"` too), is answered locally from the cached handshake result and never forwarded to the LS.
+- Every message from the Router to a browser passes through a redaction step that replaces any string containing the
+  licence with `"[redacted]"`. This covers the cached `InitializeResult`, responses, notifications and
+  `window/showMessage`.
+- The value is never logged. `PhpEditor` only logs `Premium licence: configured|not configured`.
+- `$/devsense/stats` exposes only a non-secret `licensed: boolean`.
+- Keep `DEVSENSE_PHP_LS_LICENSE` out of the browser bundle. Never put it in a `VITE_*` variable or in client code.
+
+Premium behaviour with a real licence isn't covered by this repo's automated tests, because no licence is available
+in CI. The tests cover the unlicensed `(PREMIUM)` flow and check that the licence is wired in and kept secret.
 
 ## Bundler requirements & limitations
 
@@ -320,6 +370,7 @@ For the Playwright tests the demo exposes `window.phpEditor` (the component inst
 npx playwright install chromium     # once
 npm test                            # = playwright test in the sample package
 npm run typecheck                   # tsc --noEmit for the library and the sample
+npm run test:unit                   # library unit tests (node:test): licence wiring and secrecy, applyEdit routing
 ```
 
 `npm test` runs the Playwright suite (`packages/devsense-php-editor-sampleweb/tests`, Chromium, headless). Its
@@ -335,7 +386,7 @@ These tests fail because of `devsense-php-ls` behaviour, not the editor:
   diagnostics-driven code actions stay empty (3 tests).
 - **Rename:** `textDocument/rename` answers `-32803 Cannot rename a built-in symbol` for `untitled-workspace-{id}://`
   documents (it works for `file://`). The client already converts the WorkspaceEdit (1 test).
-- **Inline completion:** `textDocument/inlineCompletion` returns `null` without a licence (1 test, see the licence note).
+- **Inline completion:** `textDocument/inlineCompletion` returns `null` without a licence (1 test, see [Premium features & licensing](#premium-features--licensing)).
 
 Expected result today: 30 passed, 5 failed (the above).
 

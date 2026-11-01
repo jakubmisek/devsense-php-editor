@@ -49,3 +49,12 @@ npm run build   # esbuild CJS bundle -> dist/index.js
 ## License
 
 MIT
+
+## Premium features
+
+Code actions (shown with `(PREMIUM)`), inline completion and other premium features of
+[devsense-php-ls](https://www.npmjs.com/package/devsense-php-ls) are unlocked with a licence. Set
+`DEVSENSE_PHP_LS_LICENSE` (the licence key or the offline `{JSON CODE}`) for the Node process, or pass
+`new PhpEditor({ license })`. The licence is sent only as `initializationOptions["0"]` of the server-side
+`initialize`. It's never sent to browsers and never logged. See the repository README, section
+"Premium features & licensing".

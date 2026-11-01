@@ -107,7 +107,7 @@ const CLIENT_CAPABILITIES: lsp.ClientCapabilities = {
     codeLens: { dynamicRegistration: true },
     rename: { dynamicRegistration: true },
   },
-  workspace: { workspaceEdit: { documentChanges: true } },
+  workspace: { workspaceEdit: { documentChanges: true }, applyEdit: true, executeCommand: {} },
 };
 
 function toMonacoSeverity(s: lsp.DiagnosticSeverity): monaco.MarkerSeverity {
@@ -218,6 +218,13 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
         diagnosticsEmitter.fire(diagnostics);
         return;
       }
+      case 'workspace/applyEdit': {
+        // Server-initiated edit (e.g. a code action executed via workspace/executeCommand).
+        if (message.id == null) return;
+        const params = message.params as lsp.ApplyWorkspaceEditParams | undefined;
+        client.sendResponse(message.id, applyWorkspaceEdit(params?.edit));
+        return;
+      }
       case 'window/showMessage':
       case 'window/logMessage': {
         const params = message.params as lsp.ShowMessageParams;
@@ -227,6 +234,26 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
       default:
         return;
     }
+  }
+
+  /** Apply an LSP WorkspaceEdit to this editor's document. Edits to other documents are rejected. */
+  function applyWorkspaceEdit(edit: lsp.WorkspaceEdit | undefined): lsp.ApplyWorkspaceEditResult {
+    if (!edit || !model) return { applied: false, failureReason: 'no document' };
+    const edits: lsp.TextEdit[] = [];
+    for (const [uri, list] of Object.entries(edit.changes ?? {})) {
+      if (uri !== documentUri) return { applied: false, failureReason: `unknown document ${uri}` };
+      edits.push(...list);
+    }
+    for (const dc of edit.documentChanges ?? []) {
+      if (!('textDocument' in dc) || dc.textDocument.uri !== documentUri) return { applied: false, failureReason: 'unsupported document change' };
+      edits.push(...dc.edits);
+    }
+    model.pushEditOperations([], edits.map((e): monaco.editor.IIdentifiedSingleEditOperation => ({
+      range: new monaco.Range(e.range.start.line + 1, e.range.start.character + 1, e.range.end.line + 1, e.range.end.character + 1),
+      text: e.newText,
+    })), () => null);
+    editor.pushUndoStop();
+    return { applied: true };
   }
 
   function registerProviders(): void {

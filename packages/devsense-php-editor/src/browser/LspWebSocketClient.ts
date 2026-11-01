@@ -78,6 +78,12 @@ export class LspWebSocketClient implements LspRequestSender {
     this.socket.send(JSON.stringify({ jsonrpc: '2.0', method, params }));
   }
 
+  /** Reply to a request the server sent to this client (e.g. `workspace/applyEdit`). */
+  sendResponse(id: string | number, result: unknown): void {
+    if (this.socket?.readyState !== WebSocket.OPEN) return;
+    this.socket.send(JSON.stringify({ jsonrpc: '2.0', id, result }));
+  }
+
   /** Subscribe to server notifications/requests. Returns an unsubscribe function. */
   onNotification(listener: (message: JsonRpcMessage) => void): () => void {
     this.notificationListeners.push(listener);
