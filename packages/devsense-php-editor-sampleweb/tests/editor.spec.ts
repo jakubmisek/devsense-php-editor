@@ -19,23 +19,21 @@ test.describe('DEVSENSE PHP Editor Playground', () => {
   });
 
   test('theme switcher changes editor theme', async ({ page }) => {
-    const select = page.locator('#theme-select');
-    await expect(select).toBeVisible();
+    const dark = page.locator('[data-testid="theme-option-dark"]');
+    const light = page.locator('[data-testid="theme-option-light"]');
+    const system = page.locator('[data-testid="theme-option-system"]');
+    await expect(dark).toBeVisible();
 
-    // Switch to dark
-    await select.selectOption('dark');
+    await dark.click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('.monaco-editor').first()).toHaveClass(/vs-dark/);
 
-    // Switch to light
-    await select.selectOption('light');
+    await light.click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(page.locator('.monaco-editor').first()).not.toHaveClass(/vs-dark/);
 
-    // Switch to automatic
-    await select.selectOption('automatic');
-    await expect(page.locator('html')).toHaveAttribute(
-      'data-theme',
-      /light|dark/
-    );
+    await system.click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', /light|dark/);
   });
 
   test('diagnostics panel is present and collapsible', async ({ page }) => {
