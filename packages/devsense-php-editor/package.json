@@ -15,7 +15,7 @@
     "test": "node test/run-unit.js"
   },
   "dependencies": {
-    "devsense-php-ls": "^1.0.19468",
+    "devsense-php-ls": "^1.0.19497",
     "ws": "^8.18.0",
     "monaco-editor": "^0.57.0"
   },

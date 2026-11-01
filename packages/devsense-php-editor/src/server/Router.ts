@@ -165,11 +165,7 @@ export class Router {
       if (isRequest) {
         const lsId = this.nextRequestId++;
         this.pending.set(lsId, { clientId: client.id, originalId: id as string | number, method });
-        if (method === 'textDocument/codeAction') {
-          this.lastCodeAction.set(client.id, data.params);
-          this.lastCodeActionClient = client.id;
-        }
-        if (method === 'workspace/executeCommand') {
+        if (method === 'textDocument/codeAction' || method === 'workspace/executeCommand') {
           this.commandQueue.push({ clientId: client.id, lsId, message: { ...data, id: lsId } });
           this.pumpCommands();
           return;
@@ -183,11 +179,24 @@ export class Router {
     if (this.initResult) forward(); else this.ready.then(forward, () => undefined);
   }
 
+  /**
+   * Run the next queued codeAction/executeCommand. Both are serialized so no other client's
+   * codeAction can land between a command and the codeAction it refers to.
+   */
   private pumpCommands(): void {
     if (this.executing) return;
     const next = this.commandQueue.shift();
     if (!next) return;
     this.executing = { clientId: next.clientId, lsId: next.lsId };
+    // Never stall the queue on a request the LS doesn't answer.
+    const lsId = next.lsId;
+    setTimeout(() => { if (this.executing?.lsId === lsId) { this.executing = null; this.pumpCommands(); } }, 15000).unref?.();
+    if (next.message.method === 'textDocument/codeAction') {
+      this.lastCodeAction.set(next.clientId, next.message.params);
+      this.lastCodeActionClient = next.clientId;
+      this.ls.send(next.message);
+      return;
+    }
     const replay = this.lastCodeActionClient !== next.clientId ? this.lastCodeAction.get(next.clientId) : undefined;
     if (replay === undefined) { this.ls.send(next.message); return; }
     this.lastCodeActionClient = next.clientId;
@@ -242,8 +251,8 @@ export class Router {
       if (p) {
         this.pending.delete(message.id as number);
         // Deliver after any window/showMessage the command produced.
-        if (p.method === 'workspace/executeCommand') {
-          if (this.executing?.lsId === message.id) this.executing = null;
+        if (this.executing?.lsId === message.id) {
+          this.executing = null;
           queueMicrotask(() => this.pumpCommands());
         }
         this.sendToClient(p.clientId, { ...message, id: p.originalId });

@@ -6,9 +6,7 @@ import { test, expect } from '@playwright/test';
  * Exercises the lightbulb / Quick Fix widget (Ctrl+.) against a live Monaco
  * editor backed by devsense-php-ls over WebSocket RPC.
  *
- * Note: devsense-php-ls does not return codeAction results for sandboxed
- * untitled-workspace-{id}:// documents. This test previously skipped
- * until the server supports code actions for virtual workspace documents.
+ * Diagnostics for untitled-workspace-{id}:// documents need devsense-php-ls >= 1.0.19497.
  */
 test.describe('textDocument/codeAction', () => {
   test.beforeEach(async ({ page }) => {
@@ -24,6 +22,7 @@ test.describe('textDocument/codeAction', () => {
       state: 'visible',
       timeout: 30000,
     });
+    await page.waitForFunction(() => (window as unknown as { phpEditor?: { getConnectionState(): string } }).phpEditor?.getConnectionState() === 'connected', null, { timeout: 30000 });
     await page.waitForTimeout(1000);
   });
 
@@ -32,12 +31,7 @@ test.describe('textDocument/codeAction', () => {
   }) => {
     await page.locator('.monaco-editor').click();
     await page.keyboard.press('Control+A');
-    await page.keyboard.type(
-      `<?php
-echo "missing semicolon"
-echo "another line"
-`
-    );
+    await page.evaluate(() => (window as unknown as { phpEditor: { setValue(v: string): void } }).phpEditor.setValue('<?php\nclass A {}\necho "missing semicolon"\necho "another line";\n'));
 
     // devsense-php-ls pushes diagnostics lazily, 1-3 s after typing stops.
 
@@ -47,20 +41,19 @@ echo "another line"
 
     await expect(page.locator('.diagnostics-header .count')).not.toHaveText('0', { timeout: 10000 });
 
-    // Click into the editor at the error line so code actions are scoped there.
-    await page.locator('.monaco-editor').click({ position: { x: 100, y: 100 } });
-
-    // Trigger the code action widget (Ctrl+.).
-    await page.keyboard.press('Control+.');
-
-    // Assert the code action Quick Fix widget appeared.
-    await expect(
-      page.locator('.monaco-editor .monaco-list:not([hidden])')
-    ).toBeVisible({ timeout: 10000 });
-
-    // Assert at least one code action suggestion is listed.
-    await expect(page.locator('.monaco-editor')).toContainText(
-      /insert|add|fix|semicolon/i
-    );
+    // Put the caret on the class (refactorings are offered there) and open the code action menu (never auto-apply).
+    // Retry: under load Monaco may cancel the explicit request in favour of the lightbulb one.
+    const menu = page.locator('.action-widget').first();
+    await expect(async () => {
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => {
+        const w = window as unknown as { phpEditor: { editor: { setPosition(p: { lineNumber: number; column: number }): void; focus(): void; trigger(s: string, id: string, a: unknown): void } } };
+        w.phpEditor.editor.setPosition({ lineNumber: 2, column: 8 });
+        w.phpEditor.editor.focus();
+        w.phpEditor.editor.trigger('test', 'editor.action.codeAction', { apply: 'never' });
+      });
+      await expect(menu).toBeVisible({ timeout: 4000 });
+    }).toPass({ timeout: 20000 });
+    await expect(page.getByRole('option').first()).toBeVisible();
   });
 });

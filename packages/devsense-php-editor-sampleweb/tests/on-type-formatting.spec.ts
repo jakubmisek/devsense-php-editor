@@ -21,6 +21,7 @@ test.describe('textDocument/onTypeFormatting', () => {
       state: 'visible',
       timeout: 30000,
     });
+    await page.waitForFunction(() => (window as unknown as { phpEditor?: { getConnectionState(): string } }).phpEditor?.getConnectionState() === 'connected', null, { timeout: 30000 });
   });
 
   test('applies on-type formatting when typing "}"', async ({ page }) => {
