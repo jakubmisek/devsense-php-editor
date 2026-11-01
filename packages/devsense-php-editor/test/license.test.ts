@@ -136,6 +136,12 @@ test('Router: executeCommand is serialized and replays the caller\'s last codeAc
   fromClient('c1', { jsonrpc: '2.0', id: 1, method: 'textDocument/codeAction', params: ca('u1') });
   fromClient('c2', { jsonrpc: '2.0', id: 1, method: 'textDocument/codeAction', params: ca('u2') });
   await tick();
+  // codeAction requests are serialized too: answer them one by one.
+  for (let i = 0; i < 2; i++) {
+    const open = ls.sent.filter((m) => m.method === 'textDocument/codeAction').at(-1)!;
+    ls.emit('message', { jsonrpc: '2.0', id: open.id, result: [] });
+    await tick();
+  }
   const mark = ls.sent.length;
   fromClient('c1', { jsonrpc: '2.0', id: 2, method: 'workspace/executeCommand', params: { command: 'x', arguments: ['A$6'] } });
   fromClient('c2', { jsonrpc: '2.0', id: 2, method: 'workspace/executeCommand', params: { command: 'x', arguments: ['A$6'] } });

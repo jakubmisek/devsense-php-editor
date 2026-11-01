@@ -20,10 +20,9 @@ This is an npm-workspaces monorepo with two packages:
 | ![Inlay hints](docs/screenshots/inlay-hints.png) | ![Diagnostics panel](docs/screenshots/diagnostics-panel.png) |
 | Parameter-name inlay hints in function calls | Diagnostics panel expanded, with squiggles\* |
 
-\* The server doesn't publish diagnostics for `untitled-workspace-{id}://` documents yet (see
-[Known server-side limitations](#known-server-side-limitations)). This screenshot was taken with a temporary, uncommitted
-local change that opened the document as `untitled-workspace://{id}/untitled.php`, a URI the server does publish
-diagnostics for. The diagnostics are real server output.
+\* This screenshot was taken before `devsense-php-ls` 1.0.19497, which publishes diagnostics for
+`untitled-workspace-{id}://` documents. It used a temporary URI workaround. The diagnostics shown are real server output,
+and since 1.0.19497 the editor shows them as-is.
 
 ## Architecture
 
@@ -394,16 +393,18 @@ npm run test:unit                   # library unit tests (node:test): licence wi
 
 ## Known server-side limitations
 
-These tests fail because of `devsense-php-ls` behaviour, not the editor:
+These tests fail because of `devsense-php-ls` behaviour (checked on 1.0.19497), not the editor:
 
-- **Diagnostics:** `devsense-php-ls` publishes no `textDocument/publishDiagnostics` for `untitled-workspace-{id}://`
-  URIs. The same text under `untitled:` or `file://` gets diagnostics. So the diagnostics panel, the markers and the
-  diagnostics-driven code actions stay empty (3 tests).
 - **Rename:** `textDocument/rename` answers `-32803 Cannot rename a built-in symbol` for `untitled-workspace-{id}://`
-  documents (it works for `file://`). The client already converts the WorkspaceEdit (1 test).
-- **Inline completion:** `textDocument/inlineCompletion` returns `null` without a licence (1 test, see [Premium features & licensing](#premium-features--licensing)).
+  documents, even for a local variable in a function. `prepareRename` returns `null`. It works for `file://`. The client
+  already converts the WorkspaceEdit (1 test).
+- **Inline completion:** `textDocument/inlineCompletion` returns `null`, with and without a licence (1 test). See
+  [Premium features & licensing](#premium-features--licensing).
 
-Expected result today: 30 passed, 5 failed (the above).
+Diagnostics for `untitled-workspace-{id}://` documents work since `devsense-php-ls` 1.0.19497. That version is the
+minimum this package depends on.
+
+Expected result without a licence: 2 failed (the above), 4 licensed-only tests skipped, the rest pass.
 
 ## Project layout
 
