@@ -4,17 +4,23 @@
   "private": true,
   "description": "DEVSENSE PHP Editor Playground - sample web application",
   "scripts": {
-    "dev": "concurrently \"node ../devsense-php-editor/dist/index.js /tmp/php-editor-port\" \"vite --host 0.0.0.0 --port 5173\"",
+    "predev": "npm run build --prefix ../devsense-php-editor",
+    "dev": "concurrently \"node ../devsense-php-editor/dist/index.js public/php-editor-port\" \"vite --host 0.0.0.0 --port 5173\"",
+    "prebuild": "npm run build --prefix ../devsense-php-editor",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "playwright test"
   },
   "dependencies": {
-    "concurrently": "^8.2.2",
-    "devsense-php-editor": "../devsense-php-editor"
+    "devsense-php-editor": "*",
+    "monaco-editor": "^0.57.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
     "typescript": "^5.8.2",
-    "vite": "^7.3.5"
+    "vite": "^7.3.5",
+    "concurrently": "^8.2.2",
+    "vscode-languageserver-protocol": "^3.17.5"
   }
 }

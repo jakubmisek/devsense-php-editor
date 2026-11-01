@@ -13,8 +13,9 @@ import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 import { ThemeManager } from './theme';
 import { PhpEditorUI } from './editor';
+import './types';
 
-const WS_URL = (window as any).PHP_EDITOR_WS_URL || 'ws://127.0.0.1:8765';
+const WS_URL = window.PHP_EDITOR_WS_URL || 'ws://127.0.0.1:8765';
 
 /** Resolve the WebSocket URL to the PhpEditor server.
  *
@@ -31,8 +32,8 @@ const WS_URL = (window as any).PHP_EDITOR_WS_URL || 'ws://127.0.0.1:8765';
  *   4. hardcoded default ws://127.0.0.1:8765
  */
 async function resolveWsUrl(): Promise<string> {
-  const override = (window as any).PHP_EDITOR_WS_URL;
-  if (override) return override as string;
+  const override = window.PHP_EDITOR_WS_URL;
+  if (override) return override;
 
   // Try the port file served by Vite (public/php-editor-port).
   try {
@@ -54,37 +55,14 @@ async function resolveWsUrl(): Promise<string> {
   return WS_URL;
 }
 
-// Get the actual monaco object (handle .default for ESM/CJS interop)
-const monacoObj = (monaco as any).default ?? monaco;
-
-// Expose monaco globally so providers.browser.js can access SymbolKind, Range, Position, etc.
-// monaco-editor ESM exports namespaced under editor/ and languages/, so we flatten them.
-(window as any).monaco = {
-  ...monacoObj,
-  editor: monacoObj.editor,
-  languages: monacoObj.languages,
-  // Flatten commonly used enums/classes to top level for providers.browser.js
-  Position: monacoObj.Position,
-  Range: monacoObj.Range,
-  Selection: monacoObj.Selection,
-  SymbolKind: monacoObj.languages.SymbolKind,
-  SymbolTag: monacoObj.languages.SymbolTag,
-  InlayHintKind: monacoObj.languages.InlayHintKind,
-  CompletionItemKind: monacoObj.languages.CompletionItemKind,
-  DocumentHighlightKind: monacoObj.languages.DocumentHighlightKind,
-  SignatureHelpTriggerKind: monacoObj.languages.SignatureHelpTriggerKind,
-  CompletionTriggerKind: monacoObj.languages.CompletionTriggerKind,
-  InlineCompletionTriggerKind: monacoObj.languages.InlineCompletionTriggerKind,
-  MarkerSeverity: monacoObj.editor.MarkerSeverity,
-  EndOfLineSequence: monacoObj.editor.EndOfLineSequence,
-  EndOfLinePreference: monacoObj.editor.EndOfLinePreference,
-  ScrollbarVisibility: monacoObj.editor.ScrollbarVisibility,
-};
+// Expose the Monaco namespace for Playwright tests (window.monaco.editor.getEditors()).
+// Providers receive it explicitly through their options; nothing reads it implicitly.
+window.monaco = monaco;
 
 // Configure Monaco Editor web worker paths before any editor creation
 // Monaco web workers bundled by Vite as ES module workers (`?worker`).
 // PHP only needs the generic editor worker (LSP features come from devsense-php-ls).
-(window as any).MonacoEnvironment = {
+window.MonacoEnvironment = {
   getWorker: (_moduleId: string, _label: string) => new EditorWorker(),
 };
 
@@ -155,13 +133,11 @@ async function main(): Promise<void> {
 
   console.log('[main] Using WS URL:', wsUrl);
 
-  console.log('[main] Monaco editor object keys:', Object.keys(monacoObj).filter(k => k.startsWith('editor') || k.startsWith('languages')).join(', '));
-
   const editorUI = new PhpEditorUI({
     wsUrl: wsUrl,
     containerId: 'editor-container',
     initialContent: '<?php\n\nfunction foo($x) {\n  echo strlen($x);\n}\n',
-    monaco: monacoObj,
+    monaco,
   });
 
   const themeSelect = document.getElementById('theme-select') as HTMLSelectElement;
@@ -170,9 +146,8 @@ async function main(): Promise<void> {
   themeSelect.addEventListener('change', (e) => {
     const val = (e.target as HTMLSelectElement).value as 'light' | 'dark' | 'automatic';
     theme.setTheme(val);
-    const m = (monaco as any).default ?? monaco;
     const monacoTheme = val === 'dark' ? 'vs-dark' : val === 'light' ? 'vs' : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'vs');
-    m.editor.setTheme(monacoTheme);
+    monaco.editor.setTheme(monacoTheme);
   });
 
   console.log('[main] Application initialized');

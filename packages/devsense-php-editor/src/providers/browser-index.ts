@@ -47,4 +47,4 @@ export type { CodeLensProviderOptions } from './CodeLensProvider';
 export { RenameProvider } from './RenameProvider';
 export type { RenameProviderOptions } from './RenameProvider';
 export { BaseProvider } from './base';
-export type { MonacoLanguageApi } from './base';
+export type { MonacoLanguageApi, MonacoApi, LspRequestSender, BaseProviderOptions } from './base';

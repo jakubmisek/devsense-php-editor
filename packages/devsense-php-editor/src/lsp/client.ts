@@ -1,14 +1,30 @@
 import { ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 
+/** JSON-RPC 2.0 error object. */
+export interface JsonRpcError {
+  code: number;
+  message: string;
+  data?: unknown;
+}
+
+/**
+ * Any JSON-RPC 2.0 message (request, notification or response) as it travels over
+ * stdio / WebSocket. Payloads are untyped JSON at this layer; the providers type them
+ * with vscode-languageserver-protocol per method.
+ */
 export type JsonRpcMessage = {
   jsonrpc?: string;
   id?: string | number | null;
   method?: string;
-  params?: any;
-  result?: any;
-  error?: any;
+  params?: unknown;
+  result?: unknown;
+  error?: JsonRpcError;
 };
+
+export function isJsonRpcMessage(value: unknown): value is JsonRpcMessage {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 /**
  * JSON-RPC over stdio for the devsense-php-ls language server.
@@ -69,8 +85,8 @@ export class LspClient extends EventEmitter {
       this.buffer = this.buffer.slice(totalFrameLength);
 
       try {
-        const message = JSON.parse(body) as JsonRpcMessage;
-        this.emit('message', message);
+        const message: unknown = JSON.parse(body);
+        if (isJsonRpcMessage(message)) this.emit('message', message);
       } catch (err) {
         this.emit('error', err instanceof Error ? err : new Error(String(err)));
       }
@@ -87,7 +103,7 @@ export class LspClient extends EventEmitter {
   }
 
   /** Send a notification (no id, no response expected). */
-  notify(method: string, params?: any): void {
+  notify(method: string, params?: unknown): void {
     this.send({ jsonrpc: '2.0', method, params });
   }
 

@@ -1,48 +1,40 @@
 /**
- * SemanticTokensProvider — maps Monaco DocumentSemanticTokensProvider to devsense-php-ls
- * LSP request textDocument/semanticTokens/full.
+ * SemanticTokensProvider — maps Monaco DocumentSemanticTokensProvider to devsense-php-ls LSP request textDocument/semanticTokens/full.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface SemanticTokensProviderOptions {
-  selector: any;
-  languageId: string;
-  monaco: any;
-  legend: SemanticTokensLegend;
+export interface SemanticTokensProviderOptions extends BaseProviderOptions {
+  legend: monaco.languages.SemanticTokensLegend;
 }
 
 export class SemanticTokensProvider extends BaseProvider {
-  private readonly legend: SemanticTokensLegend;
+  private readonly legend: monaco.languages.SemanticTokensLegend;
 
-  constructor(router: any, options: SemanticTokensProviderOptions) {
+  constructor(router: LspRequestSender, options: SemanticTokensProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
     this.legend = options.legend;
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.DocumentSemanticTokensProvider = {
       getLegend: () => this.legend,
-      provideDocumentSemanticTokens: async (model: any, lastResultId: string | null, token: CancellationToken): Promise<ProviderResult<SemanticTokens>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
-        };
+      provideDocumentSemanticTokens: async (model, _lastResultId, _token) => {
+        const params: lsp.SemanticTokensParams = { textDocument: this.toTextDocument(model) };
         console.log('[SemanticTokensProvider] Sending textDocument/semanticTokens/full for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/semanticTokens/full', params);
+          const result = await this.request<lsp.SemanticTokens>('textDocument/semanticTokens/full', params);
           console.log('[SemanticTokensProvider] Got semantic tokens:', result?.data?.length ?? 0, 'tokens');
           if (!result) return null;
-          return {
-            resultId: result.resultId,
-            data: result.data ? new Uint32Array(result.data) : new Uint32Array(0),
-          };
+          return { resultId: result.resultId, data: new Uint32Array(result.data ?? []) };
         } catch (err) {
           console.error('SemanticTokensProvider error:', err);
           return null;
         }
       },
+      releaseDocumentSemanticTokens: () => { /* nothing cached */ },
     };
-    const disp = monaco.languages.registerDocumentSemanticTokensProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerDocumentSemanticTokensProvider(this.selector, provider));
   }
 }

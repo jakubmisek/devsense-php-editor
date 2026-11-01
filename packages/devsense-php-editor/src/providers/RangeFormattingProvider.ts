@@ -1,48 +1,36 @@
 /**
- * RangeFormattingProvider — maps Monaco DocumentRangeFormattingEditProvider to devsense-php-ls
- * LSP request textDocument/rangeFormatting.
+ * RangeFormattingProvider — maps Monaco DocumentRangeFormattingEditProvider to devsense-php-ls LSP request textDocument/rangeFormatting.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface RangeFormattingProviderOptions {
-  selector: any;
-  languageId: string;
-  monaco: any;
-}
+export type RangeFormattingProviderOptions = BaseProviderOptions;
 
 export class RangeFormattingProvider extends BaseProvider {
-  constructor(router: any, options: RangeFormattingProviderOptions) {
+  constructor(router: LspRequestSender, options: RangeFormattingProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
-      provideDocumentRangeFormattingEdits: async (model: any, range: any, options: FormattingOptions, token: CancellationToken): Promise<ProviderResult<TextEdit[]>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.DocumentRangeFormattingEditProvider = {
+      provideDocumentRangeFormattingEdits: async (model, range, options, _token) => {
+        const params: lsp.DocumentRangeFormattingParams = {
+          textDocument: this.toTextDocument(model),
           range: this.toLspRange(range),
-          options: {
-            tabSize: options.tabSize,
-            insertSpaces: options.insertSpaces,
-          },
+          options: { tabSize: options.tabSize, insertSpaces: options.insertSpaces },
         };
         console.log('[RangeFormattingProvider] Sending textDocument/rangeFormatting for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/rangeFormatting', params);
+          const result = await this.request<lsp.TextEdit[]>('textDocument/rangeFormatting', params);
           console.log('[RangeFormattingProvider] Got range formatting edits:', result?.length ?? 0, 'edits');
-          if (!result || !Array.isArray(result)) return null;
-          return result.map((e: any) => ({
-            range: this.fromLspRange(e.range),
-            text: e.newText,
-          }));
+          return result ? this.fromLspTextEdits(result) : null;
         } catch (err) {
           console.error('RangeFormattingProvider error:', err);
           return null;
         }
       },
     };
-    const disp = monaco.languages.registerDocumentRangeFormattingEditProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerDocumentRangeFormattingEditProvider(this.selector, provider));
   }
 }

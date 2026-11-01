@@ -1,50 +1,38 @@
 /**
- * HoverProvider — maps Monaco HoverProvider to devsense-php-ls
- * LSP request textDocument/hover.
+ * HoverProvider — maps Monaco HoverProvider to devsense-php-ls LSP request textDocument/hover.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface HoverProviderOptions {
-  selector: any;
-  languageId: string;
-  monaco: any;
-}
+export type HoverProviderOptions = BaseProviderOptions;
 
 export class HoverProvider extends BaseProvider {
-  constructor(router: any, options: HoverProviderOptions) {
+  constructor(router: LspRequestSender, options: HoverProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
-      provideHover: async (model: any, position: Position, token: CancellationToken): Promise<ProviderResult<Hover>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
-          position: this.toLspPosition(position),
-        };
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.HoverProvider = {
+      provideHover: async (model, position, _token) => {
+        const params: lsp.HoverParams = { textDocument: this.toTextDocument(model), position: this.toLspPosition(position) };
         console.log('[HoverProvider] Sending textDocument/hover for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/hover', params);
+          const result = await this.request<lsp.Hover>('textDocument/hover', params);
           console.log('[HoverProvider] Got hover result:', !!result?.contents);
-          if (!result || !result.contents) return null;
-          const contents = Array.isArray(result.contents) ? result.contents : [result.contents];
-          const markdownContents = contents.map((c: any) => {
-            if (typeof c === 'string') return { value: c, kind: 'markdown' as const } as IMarkdownString;
-            if (c.kind && c.value) return c as IMarkdownString;
-            return { value: String(c), kind: 'markdown' as const } as IMarkdownString;
+          if (!result?.contents) return null;
+          const parts = Array.isArray(result.contents) ? result.contents : [result.contents];
+          const contents = parts.map((c): monaco.IMarkdownString => {
+            const md = this.fromLspMarkup(c);
+            return typeof md === 'string' ? { value: md } : md ?? { value: '' };
           });
-          return {
-            contents: markdownContents,
-            range: result.range ? this.fromLspRange(result.range) : undefined,
-          };
+          return { contents, range: result.range ? this.fromLspRange(result.range) : undefined };
         } catch (err) {
           console.error('HoverProvider error:', err);
           return null;
         }
       },
     };
-    const disp = monaco.languages.registerHoverProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerHoverProvider(this.selector, provider));
   }
 }

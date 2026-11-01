@@ -1,11 +1,11 @@
 import { spawn, ChildProcess } from 'child_process';
 import { Devsense } from 'devsense-php-ls';
 import { EventEmitter } from 'events';
-import { LspClient } from '../lsp/client';
+import { LspClient, JsonRpcMessage } from '../lsp/client';
 
 export interface LsServerOptions {
   /** Extra initializationOptions merged into the LS `initialize` request. */
-  initializationOptions?: Record<string, any>;
+  initializationOptions?: Record<string, unknown>;
   cwd?: string;
   env?: Record<string, string>;
   logger?: (msg: string) => void;
@@ -84,7 +84,7 @@ export class LsServer extends EventEmitter {
         console.log('[LsServer] LS stderr:', text.trim());
         this.emit('stderr', text);
       });
-      this.client.on('message', (msg: any) => {
+      this.client.on('message', (msg: JsonRpcMessage) => {
         console.log('[LsServer] <- LS message:', msg.method || msg.id || 'response');
       });
       this.client.on('exit', () => {
@@ -141,7 +141,7 @@ export class LsServer extends EventEmitter {
   }
 
   /** Send a raw JSON-RPC message to the LS (for logging/tracing). */
-  send(message: any): void {
+  send(message: JsonRpcMessage): void {
     console.log('[LsServer] -> LS message:', message.method || message.id || 'response');
     this.client?.send(message);
   }

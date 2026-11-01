@@ -1,109 +1,117 @@
 /**
  * Base provider for LSP-backed Monaco language features.
  *
- * Each provider wraps an LSP request method and maps between Monaco Editor
- * provider interfaces and devsense-php-ls LSP requests/responses through
- * the Router (which exposes promise-based sendRequest).
+ * Each provider maps a Monaco provider interface to a devsense-php-ls LSP request
+ * sent through an {@link LspRequestSender} (the Node Router or the browser WsClient).
  *
- * Monaco is injected via the constructor. The actual Monaco object comes
- * from window.monaco (loaded via AMD loader), not from importing 'monaco-editor'
- * at build time (which breaks because monaco-editor's ESM doesn't export types).
+ * Types come from `monaco-editor` and `vscode-languageserver-protocol` as type-only
+ * imports; nothing from either package is bundled. The Monaco runtime API is injected
+ * through the constructor (`options.monaco`), so enums/classes such as
+ * `monaco.Range` or `monaco.languages.SymbolKind` are read from that object.
  */
-import { Router } from '../server/Router';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
 
-export interface MonacoLanguageApi {
-  /** Full monaco namespace may be passed; providers call monaco.languages.register*. */
-  languages?: any;
-  registerCompletionItemProvider(selector: any, provider: any): { dispose(): void };
-  registerHoverProvider(selector: any, provider: any): { dispose(): void };
-  registerSignatureHelpProvider(selector: any, provider: any): { dispose(): void };
-  registerDefinitionProvider(selector: any, provider: any): { dispose(): void };
-  registerReferenceProvider(selector: any, provider: any): { dispose(): void };
-  registerDocumentSymbolProvider(selector: any, provider: any): { dispose(): void };
-  registerCodeActionProvider?(selector: any, provider: any): { dispose(): void };
-  registerDocumentFormattingEditProvider?(selector: any, provider: any): { dispose(): void };
-  registerDocumentRangeFormattingEditProvider?(selector: any, provider: any): { dispose(): void };
-  registerOnTypeFormattingEditProvider?(selector: any, provider: any): { dispose(): void };
-  registerDocumentSemanticTokensProvider?(selector: any, provider: any): { dispose(): void };
-  registerInlineCompletionsProvider?(selector: any, provider: any): { dispose(): void };
-  registerInlayHintsProvider?(selector: any, provider: any): { dispose(): void };
-  registerCodeLensProvider?(selector: any, provider: any): { dispose(): void };
-  registerRenameProvider?(selector: any, provider: any): { dispose(): void };
+/** The `monaco-editor` namespace object (what `import * as monaco from 'monaco-editor'` yields). */
+export type MonacoApi = typeof monaco;
+/** @deprecated kept for backward compatibility; use {@link MonacoApi}. */
+export type MonacoLanguageApi = MonacoApi;
+
+/** Anything that can send an LSP request and resolve with its result (Router, WsClient). */
+export interface LspRequestSender {
+  sendRequest(method: string, params?: unknown): Promise<unknown>;
 }
 
-/**
- * Accept either the raw `monaco-editor` namespace or a flattened object and expose
- * Range/Position/SymbolKind/InlayHintKind/... at the top level, falling back to
- * `monaco.languages.*` and `monaco.editor.*`.
- */
-export function normalizeMonaco(monaco: any): any {
-  if (!monaco) return monaco;
-  return new Proxy(monaco, {
-    get(target, prop) {
-      if (prop in target && target[prop] !== undefined) return target[prop];
-      return target.languages?.[prop] ?? target.editor?.[prop];
-    },
-  });
+/** Options shared by every provider. */
+export interface BaseProviderOptions {
+  selector: monaco.languages.LanguageSelector;
+  languageId: string;
+  monaco: MonacoApi;
 }
 
 export abstract class BaseProvider {
-  protected readonly router: Router;
+  protected readonly router: LspRequestSender;
   protected readonly languageId: string;
-  protected readonly selector: any;
-  protected disposables: Array<{ dispose(): void }> = [];
-  protected readonly monaco: any;
+  protected readonly selector: monaco.languages.LanguageSelector;
+  protected readonly monaco: MonacoApi;
+  protected disposables: monaco.IDisposable[] = [];
 
-  constructor(router: Router, languageId: string, selector: any, monaco: any) {
+  constructor(router: LspRequestSender, languageId: string, selector: monaco.languages.LanguageSelector, monacoApi: MonacoApi) {
     this.router = router;
     this.languageId = languageId;
     this.selector = selector;
-    this.monaco = normalizeMonaco(monaco ?? (globalThis as any).monaco);
+    this.monaco = monacoApi;
   }
 
-  /**
-   * Send an LSP request to devsense-php-ls and await the response.
-   */
-  protected async request(method: string, params: any): Promise<any> {
-    return this.router.sendRequest(method, params);
+  /** Register the provider with Monaco. */
+  abstract register(monacoApi: MonacoApi): void;
+
+  /** Send an LSP request; the result type is the LSP response type for `method`. */
+  protected async request<R>(method: string, params: object): Promise<R | null> {
+    return ((await this.router.sendRequest(method, params)) ?? null) as R | null;
   }
 
-  /** Convert a Monaco Position to LSP position { line, character }. */
-  protected toLspPosition(pos: { lineNumber: number; column: number }): { line: number; character: number } {
+  protected toTextDocument(model: monaco.editor.ITextModel): lsp.TextDocumentIdentifier {
+    return { uri: model.uri.toString() };
+  }
+
+  /** Monaco position (1-based) -> LSP position (0-based). */
+  protected toLspPosition(pos: monaco.IPosition): lsp.Position {
     return { line: pos.lineNumber - 1, character: pos.column - 1 };
   }
 
-  /** Convert an LSP position { line, character } to Monaco Position. */
-  protected fromLspPosition(pos: { line: number; character: number }): any {
+  /** LSP position -> Monaco Position. */
+  protected fromLspPosition(pos: lsp.Position): monaco.Position {
     return new this.monaco.Position(pos.line + 1, pos.character + 1);
   }
 
-  /** Convert an LSP range to LSP range { start, end }. */
-  protected toLspRange(range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }): { start: { line: number; character: number }; end: { line: number; character: number } } {
+  /** Monaco range -> LSP range. */
+  protected toLspRange(range: monaco.IRange): lsp.Range {
     return {
       start: this.toLspPosition({ lineNumber: range.startLineNumber, column: range.startColumn }),
       end: this.toLspPosition({ lineNumber: range.endLineNumber, column: range.endColumn }),
     };
   }
 
-  /** Convert an LSP range to Monaco Range. */
-  protected fromLspRange(range: { start: { line: number; character: number }; end: { line: number; character: number } }): any {
-    return new this.monaco.Range(
-      range.start.line + 1,
-      range.start.character + 1,
-      range.end.line + 1,
-      range.end.character + 1
-    );
+  /** LSP range -> Monaco Range. */
+  protected fromLspRange(range: lsp.Range): monaco.Range {
+    return new this.monaco.Range(range.start.line + 1, range.start.character + 1, range.end.line + 1, range.end.character + 1);
   }
 
-  /** Convert an LSP Location to Monaco Location. */
-  protected fromLspLocation(loc: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }): any {
-    return { uri: loc.uri, range: this.fromLspRange(loc.range) };
+  /** LSP Location or LocationLink -> Monaco Location. */
+  protected fromLspLocation(loc: lsp.Location | lsp.LocationLink): monaco.languages.Location {
+    if ('targetUri' in loc) {
+      return { uri: this.monaco.Uri.parse(loc.targetUri), range: this.fromLspRange(loc.targetSelectionRange ?? loc.targetRange) };
+    }
+    return { uri: this.monaco.Uri.parse(loc.uri), range: this.fromLspRange(loc.range) };
   }
 
-  /** Register the Monaco provider and track its disposable. */
-  protected register(monaco: MonacoLanguageApi, registerFn: (monaco: MonacoLanguageApi) => { dispose(): void }): void {
-    const disp = registerFn(monaco);
-    this.disposables.push(disp);
+  protected fromLspTextEdits(edits: lsp.TextEdit[] | null | undefined): monaco.languages.TextEdit[] {
+    return (edits ?? []).map((e) => ({ range: this.fromLspRange(e.range), text: e.newText }));
+  }
+
+  /** LSP MarkupContent / MarkedString(s) -> Monaco markdown. */
+  protected fromLspMarkup(doc: string | lsp.MarkupContent | lsp.MarkedString | undefined): string | monaco.IMarkdownString | undefined {
+    if (doc === undefined || typeof doc === 'string') return doc;
+    if ('kind' in doc) return doc.kind === 'markdown' ? { value: doc.value } : doc.value;
+    return { value: '```' + doc.language + '\n' + doc.value + '\n```' };
+  }
+
+  protected fromLspCommand(cmd: lsp.Command | undefined): monaco.languages.Command | undefined {
+    return cmd ? { id: cmd.command, title: cmd.title, arguments: cmd.arguments } : undefined;
+  }
+
+  /** LSP WorkspaceEdit -> Monaco WorkspaceEdit (text edits only; file operations are ignored). */
+  protected fromLspWorkspaceEdit(edit: lsp.WorkspaceEdit | null | undefined): monaco.languages.WorkspaceEdit | undefined {
+    if (!edit) return undefined;
+    const edits: monaco.languages.IWorkspaceTextEdit[] = [];
+    const push = (uri: string, e: lsp.TextEdit | lsp.AnnotatedTextEdit) =>
+      edits.push({ resource: this.monaco.Uri.parse(uri), textEdit: { range: this.fromLspRange(e.range), text: e.newText }, versionId: undefined });
+    for (const [uri, list] of Object.entries(edit.changes ?? {})) for (const e of list) push(uri, e);
+    for (const dc of edit.documentChanges ?? []) {
+      if ('edits' in dc) for (const e of dc.edits) push(dc.textDocument.uri, e);
+    }
+    return { edits };
   }
 
   /** Dispose all registered Monaco providers. */
@@ -112,19 +120,5 @@ export abstract class BaseProvider {
       try { d.dispose(); } catch { /* ignore */ }
     }
     this.disposables = [];
-  }
-
-  /** LSP WorkspaceEdit -> Monaco IWorkspaceEdit. */
-  protected toMonacoWorkspaceEdit(edit: any): any {
-    if (!edit) return undefined;
-    const edits: any[] = [];
-    const push = (uri: string, e: any) => edits.push({
-      resource: this.monaco.Uri.parse(uri),
-      textEdit: { range: this.fromLspRange(e.range), text: e.newText },
-      versionId: undefined,
-    });
-    for (const [uri, list] of Object.entries(edit.changes || {})) for (const e of list as any[]) push(uri, e);
-    for (const dc of edit.documentChanges || []) for (const e of dc.edits || []) push(dc.textDocument.uri, e);
-    return { edits };
   }
 }

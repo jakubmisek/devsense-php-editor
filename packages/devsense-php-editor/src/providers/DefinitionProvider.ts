@@ -1,42 +1,33 @@
 /**
- * DefinitionProvider — maps Monaco DefinitionProvider to devsense-php-ls
- * LSP request textDocument/definition.
+ * DefinitionProvider — maps Monaco DefinitionProvider to devsense-php-ls LSP request textDocument/definition.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface DefinitionProviderOptions {
-  selector: any;
-  languageId: string;
-  monaco: any;
-}
+export type DefinitionProviderOptions = BaseProviderOptions;
 
 export class DefinitionProvider extends BaseProvider {
-  constructor(router: any, options: DefinitionProviderOptions) {
+  constructor(router: LspRequestSender, options: DefinitionProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
-      provideDefinition: async (model: any, position: Position, token: CancellationToken): Promise<ProviderResult<Definition>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
-          position: this.toLspPosition(position),
-        };
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.DefinitionProvider = {
+      provideDefinition: async (model, position, _token) => {
+        const params: lsp.DefinitionParams = { textDocument: this.toTextDocument(model), position: this.toLspPosition(position) };
         console.log('[DefinitionProvider] Sending textDocument/definition for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/definition', params);
-          console.log('[DefinitionProvider] Got definition result:', result?.length ?? 0, 'locations');
-          if (!result) return null;
-          const locations = Array.isArray(result) ? result : [result];
-          return locations.map((loc: any) => this.fromLspLocation(loc));
+          const result = await this.request<lsp.Definition | lsp.LocationLink[]>('textDocument/definition', params);
+          const locations: Array<lsp.Location | lsp.LocationLink> = !result ? [] : Array.isArray(result) ? result : [result];
+          console.log('[DefinitionProvider] Got definition result:', locations.length, 'locations');
+          return result ? locations.map((loc) => this.fromLspLocation(loc)) : null;
         } catch (err) {
           console.error('DefinitionProvider error:', err);
           return null;
         }
       },
     };
-    const disp = monaco.languages.registerDefinitionProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerDefinitionProvider(this.selector, provider));
   }
 }

@@ -1,58 +1,50 @@
 /**
- * CodeLensProvider — maps Monaco CodeLensProvider to devsense-php-ls
- * LSP request textDocument/codeLens.
+ * CodeLensProvider — maps Monaco CodeLensProvider to devsense-php-ls LSP request textDocument/codeLens and codeLens/resolve.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface CodeLensProviderOptions {
-  selector: any;
-  languageId: string;
-  monaco: any;
+export type CodeLensProviderOptions = BaseProviderOptions;
+
+/** Monaco lens that remembers the LSP lens it came from, for codeLens/resolve. */
+interface LspBackedCodeLens extends monaco.languages.CodeLens {
+  lsp: lsp.CodeLens;
 }
 
 export class CodeLensProvider extends BaseProvider {
-  constructor(router: any, options: CodeLensProviderOptions) {
+  constructor(router: LspRequestSender, options: CodeLensProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
-      provideCodeLenses: async (model: any, token: CancellationToken): Promise<ProviderResult<CodeLensList>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
-        };
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.CodeLensProvider = {
+      provideCodeLenses: async (model, _token) => {
+        const params: lsp.CodeLensParams = { textDocument: this.toTextDocument(model) };
         console.log('[CodeLensProvider] Sending textDocument/codeLens for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/codeLens', params);
+          const result = await this.request<lsp.CodeLens[]>('textDocument/codeLens', params);
           console.log('[CodeLensProvider] Got code lenses:', result?.length ?? 0, 'lenses');
-          if (!result || !Array.isArray(result)) return null;
-          return {
-            lenses: result.map((l: any) => ({
-              range: this.fromLspRange(l.range),
-              id: l.id,
-              command: l.command ? { id: l.command.command ?? '', title: l.command.title, arguments: l.command.arguments } : undefined,
-              __lsp: l,
-            })),
-            dispose: () => { /* no-op */ },
-          };
+          if (!result) return null;
+          const lenses = result.map((l): LspBackedCodeLens => ({ range: this.fromLspRange(l.range), command: this.fromLspCommand(l.command), lsp: l }));
+          return { lenses, dispose: () => { /* no-op */ } };
         } catch (err) {
           console.error('CodeLensProvider error:', err);
           return null;
         }
       },
-      resolveCodeLens: async (_model: any, lens: any, _token: CancellationToken): Promise<any> => {
-        if (lens.command || !lens.__lsp) return lens;
+      resolveCodeLens: async (_model, codeLens, _token) => {
+        const lens = codeLens as LspBackedCodeLens;
+        if (lens.command || !lens.lsp) return lens;
         try {
-          const r = await this.router.sendRequest('codeLens/resolve', lens.__lsp);
-          if (r?.command) lens.command = { id: r.command.command ?? '', title: r.command.title, arguments: r.command.arguments };
+          const resolved = await this.request<lsp.CodeLens>('codeLens/resolve', lens.lsp);
+          if (resolved?.command) lens.command = this.fromLspCommand(resolved.command);
         } catch (err) {
           console.error('CodeLensProvider resolve error:', err);
         }
         return lens;
       },
     };
-    const disp = monaco.languages.registerCodeLensProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerCodeLensProvider(this.selector, provider));
   }
 }

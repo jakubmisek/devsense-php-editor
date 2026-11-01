@@ -1,49 +1,43 @@
 /**
- * InlineCompletionProvider — maps Monaco InlineCompletionsProvider to devsense-php-ls
- * LSP request textDocument/inlineCompletion.
+ * InlineCompletionProvider — maps Monaco InlineCompletionsProvider to devsense-php-ls LSP request textDocument/inlineCompletion.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface InlineCompletionProviderOptions {
-  selector: any;
-  languageId: string;
-  monaco: any;
-}
+export type InlineCompletionProviderOptions = BaseProviderOptions;
 
 export class InlineCompletionProvider extends BaseProvider {
-  constructor(router: any, options: InlineCompletionProviderOptions) {
+  constructor(router: LspRequestSender, options: InlineCompletionProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
-      provideInlineCompletions: async (model: any, position: Position, context: InlineCompletionContext, token: CancellationToken): Promise<ProviderResult<InlineCompletions>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.InlineCompletionsProvider = {
+      provideInlineCompletions: async (model, position, context, _token) => {
+        const selected = context.selectedSuggestionInfo;
+        const params: lsp.InlineCompletionParams = {
+          textDocument: this.toTextDocument(model),
           position: this.toLspPosition(position),
           // Monaco InlineCompletionTriggerKind: Automatic=0, Explicit=1.
-          // LSP InlineCompletionTriggerKind:    Invoked=1,   Automatic=2.
+          // LSP 3.18 InlineCompletionTriggerKind: Invoked=1, Automatic=2. (vscode-languageserver-protocol
+          // 3.17.x still types the proposed 0/1 values, hence the cast.)
           context: {
-            triggerKind: (context as any)?.triggerKind === 1 ? 1 : 2,
-            selectedCompletionInfo: (context as any)?.selectedSuggestionInfo
-              ? { range: this.toLspRange((context as any).selectedSuggestionInfo.range), text: (context as any).selectedSuggestionInfo.text }
-              : undefined,
+            triggerKind: (context.triggerKind === this.monaco.languages.InlineCompletionTriggerKind.Explicit ? 1 : 2) as number as lsp.InlineCompletionTriggerKind,
+            selectedCompletionInfo: selected ? { range: this.toLspRange(selected.range), text: selected.text } : undefined,
           },
         };
         console.log('[InlineCompletionProvider] Sending textDocument/inlineCompletion for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/inlineCompletion', params);
-          console.log('[InlineCompletionProvider] Got inline completions:', result?.items?.length ?? 0, 'items');
+          const result = await this.request<lsp.InlineCompletionList | lsp.InlineCompletionItem[]>('textDocument/inlineCompletion', params);
           // LSP allows InlineCompletionList or InlineCompletionItem[].
-          const items = Array.isArray(result) ? result : result?.items;
-          if (!items || !Array.isArray(items)) return { items: [] };
+          const items = Array.isArray(result) ? result : result?.items ?? [];
+          console.log('[InlineCompletionProvider] Got inline completions:', items.length, 'items');
           return {
-            items: items.map((item: any) => ({
-              insertText: typeof item.insertText === 'string' ? item.insertText : { snippet: item.insertText?.value ?? '' },
-              filterText: item.filterText,
+            items: items.map((item): monaco.languages.InlineCompletion => ({
+              insertText: typeof item.insertText === 'string' ? item.insertText : { snippet: item.insertText.value },
               range: item.range ? this.fromLspRange(item.range) : undefined,
-              command: item.command,
+              command: this.fromLspCommand(item.command),
             })),
           };
         } catch (err) {
@@ -51,11 +45,8 @@ export class InlineCompletionProvider extends BaseProvider {
           return null;
         }
       },
-      // Required by Monaco's InlineCompletionsProvider interface.
       disposeInlineCompletions: () => { /* nothing to free */ },
-      freeInlineCompletions: () => { /* older Monaco name */ },
     };
-    const disp = monaco.languages.registerInlineCompletionsProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerInlineCompletionsProvider(this.selector, provider));
   }
 }

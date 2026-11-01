@@ -32,5 +32,6 @@ Full Playwright suite: **30 passed, 5 failed, 0 skipped.** No test self-skips; e
 ## Build layout
 
 - `packages/devsense-php-editor/build.js` builds `dist/index.js` (Node: PhpEditor, Router) and `dist-browser/providers.browser.js` (generated ESM Monaco providers from `src/providers/*.ts`), exported as `devsense-php-editor/browser`.
+- Build outputs (`dist/`, `dist-browser/`, `dist/types/*.d.ts`) are **not committed**; they are produced by `npm install` (lib `prepare`) and by sampleweb `predev`/`prebuild`. Monaco comes only from the `monaco-editor` npm dependency through Vite imports (workers via `?worker`, CSS/fonts via the package) — no copy in `public/`.
 - The sample web app imports the generated bundle. The hand-maintained `providers.browser.js` is gone.
 - `tsc --noEmit` is clean.

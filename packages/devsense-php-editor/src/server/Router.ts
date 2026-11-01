@@ -1,15 +1,16 @@
-import { LspClient } from '../lsp/client';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { LspClient, JsonRpcMessage, isJsonRpcMessage } from '../lsp/client';
 import { WsServer, WsClient } from './WsServer';
 
 export interface RouterOptions {
   /** initializationOptions (e.g. { "0": license }) merged into the LS `initialize`. */
-  initializationOptions?: Record<string, any>;
+  initializationOptions?: Record<string, unknown>;
   /** Capabilities advertised to the LS in the single real `initialize`. */
-  clientCapabilities?: any;
+  clientCapabilities?: lsp.ClientCapabilities;
 }
 
 /** Client-side capabilities sent in the one real `initialize` (browser Monaco feature set). */
-const DEFAULT_CLIENT_CAPABILITIES = {
+const DEFAULT_CLIENT_CAPABILITIES: lsp.ClientCapabilities = {
   workspace: { configuration: true, workspaceFolders: false, didChangeConfiguration: { dynamicRegistration: true } },
   textDocument: {
     synchronization: { didSave: false, dynamicRegistration: false },
@@ -49,10 +50,10 @@ export class Router {
   /** Workspace/document URI prefix -> clientId. */
   private uriToClient = new Map<string, string>();
   /** Router-originated requests awaiting responses. */
-  private pendingRequests = new Map<number, { resolve: (value: any) => void; reject: (err: Error) => void }>();
+  private pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
   private nextRequestId = 1;
-  private initResult: any = null;
-  private ready: Promise<any>;
+  private initResult: lsp.InitializeResult | null = null;
+  private ready: Promise<lsp.InitializeResult>;
   /** Count of `initialize` requests actually sent to the LS (for diagnostics/tests). */
   public lsInitializeCount = 0;
 
@@ -68,50 +69,52 @@ export class Router {
   }
 
   /** Resolves with the cached LS InitializeResult once the single handshake is done. */
-  whenReady(): Promise<any> { return this.ready; }
+  whenReady(): Promise<lsp.InitializeResult> { return this.ready; }
 
-  private async initializeLs(): Promise<any> {
+  private async initializeLs(): Promise<lsp.InitializeResult> {
     this.lsInitializeCount++;
-    const result = await this.request('initialize', {
+    const params: lsp.InitializeParams = {
       processId: process.pid,
       clientInfo: { name: 'devsense-php-editor' },
       rootUri: null,
       workspaceFolders: null,
       capabilities: this.options.clientCapabilities ?? DEFAULT_CLIENT_CAPABILITIES,
       initializationOptions: { ...(this.options.initializationOptions || {}) },
-    });
+    };
+    const result = (await this.request('initialize', params)) as lsp.InitializeResult;
     this.ls.send({ jsonrpc: '2.0', method: 'initialized', params: {} });
     this.initResult = result;
     console.log('[Router] LS initialized; capabilities cached');
     return result;
   }
 
-  private sendToClient(clientId: string, message: any): void {
+  private sendToClient(clientId: string, message: JsonRpcMessage): void {
     this.ws.sendTo(clientId, message);
   }
 
   /** A WS client sent a JSON-RPC message. */
-  private handleClientMessage(client: WsClient, data: any): void {
-    if (!data || typeof data !== 'object') return;
+  private handleClientMessage(client: WsClient, data: unknown): void {
+    if (!isJsonRpcMessage(data)) return;
     const { method, id } = data;
     const isRequest = method != null && id != null;
+    const replyId = id ?? null;
 
     // Lifecycle messages are owned by the server worker, never forwarded.
     if (method === 'initialize' && isRequest) {
       this.ready.then(
-        (result) => this.sendToClient(client.id, { jsonrpc: '2.0', id, result }),
-        (err) => this.sendToClient(client.id, { jsonrpc: '2.0', id, error: { code: -32603, message: String(err?.message ?? err) } }),
+        (result) => this.sendToClient(client.id, { jsonrpc: '2.0', id: replyId, result }),
+        (err: unknown) => this.sendToClient(client.id, { jsonrpc: '2.0', id: replyId, error: { code: -32603, message: err instanceof Error ? err.message : String(err) } }),
       );
       return;
     }
     if (method === 'shutdown' && isRequest) {
-      this.sendToClient(client.id, { jsonrpc: '2.0', id, result: null });
+      this.sendToClient(client.id, { jsonrpc: '2.0', id: replyId, result: null });
       return;
     }
     if (method === 'initialized' || method === 'exit') return;
     // Introspection for tests/monitoring: how many real initialize requests hit the LS.
     if (method === '$/devsense/stats' && isRequest) {
-      this.sendToClient(client.id, { jsonrpc: '2.0', id, result: { lsInitializeCount: this.lsInitializeCount, clientId: client.id, clients: this.ws.getClientIds() } });
+      this.sendToClient(client.id, { jsonrpc: '2.0', id: replyId, result: { lsInitializeCount: this.lsInitializeCount, clientId: client.id, clients: this.ws.getClientIds() } });
       return;
     }
 
@@ -119,13 +122,13 @@ export class Router {
     if (method == null) return;
 
     // Claim ownership of any document the client touches.
-    const uri: string | undefined = data.params?.textDocument?.uri;
+    const uri = (data.params as Partial<lsp.TextDocumentPositionParams> | undefined)?.textDocument?.uri;
     if (uri && method === 'textDocument/didOpen') this.uriToClient.set(uri, client.id);
 
     const forward = () => {
       if (isRequest) {
         const lsId = this.nextRequestId++;
-        this.pending.set(lsId, { clientId: client.id, originalId: id });
+        this.pending.set(lsId, { clientId: client.id, originalId: id as string | number });
         this.ls.send({ ...data, id: lsId });
       } else {
         this.ls.send(data);
@@ -150,8 +153,7 @@ export class Router {
   }
 
   /** A message arrived from the LS. */
-  private handleLsMessage(message: any): void {
-    if (!message || typeof message !== 'object') return;
+  private handleLsMessage(message: JsonRpcMessage): void {
 
     // LS -> client request: answer on the server side.
     if (message.method && message.id != null) {
@@ -161,23 +163,23 @@ export class Router {
 
     // Response.
     if (message.id != null) {
-      const own = this.pendingRequests.get(message.id);
+      const own = typeof message.id === 'number' ? this.pendingRequests.get(message.id) : undefined;
       if (own) {
-        this.pendingRequests.delete(message.id);
+        this.pendingRequests.delete(message.id as number);
         if (message.error) own.reject(new Error(`LS error ${message.error.code}: ${message.error.message}`));
         else own.resolve(message.result);
         return;
       }
-      const p = this.pending.get(message.id);
+      const p = typeof message.id === 'number' ? this.pending.get(message.id) : undefined;
       if (p) {
-        this.pending.delete(message.id);
+        this.pending.delete(message.id as number);
         this.sendToClient(p.clientId, { ...message, id: p.originalId });
       }
       return;
     }
 
     if (message.method === 'textDocument/publishDiagnostics') {
-      const uri: string | undefined = message.params?.uri;
+      const uri = (message.params as lsp.PublishDiagnosticsParams | undefined)?.uri;
       const clientId = uri ? this.getClientForUri(uri) : undefined;
       if (clientId) this.sendToClient(clientId, message);
       else console.log('[Router] Dropping diagnostics for unowned URI', uri);
@@ -190,10 +192,10 @@ export class Router {
     this.ws.broadcast(message);
   }
 
-  private answerServerRequest(message: any): any {
+  private answerServerRequest(message: JsonRpcMessage): unknown {
     switch (message.method) {
       case 'workspace/configuration':
-        return (message.params?.items ?? []).map(() => null);
+        return ((message.params as lsp.ConfigurationParams | undefined)?.items ?? []).map(() => null);
       case 'workspace/workspaceFolders':
         return [];
       case 'window/showMessageRequest':
@@ -220,7 +222,7 @@ export class Router {
     return undefined;
   }
 
-  private request(method: string, params?: any): Promise<any> {
+  private request(method: string, params?: unknown): Promise<unknown> {
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
@@ -229,7 +231,7 @@ export class Router {
   }
 
   /** Send a request to the LS from the Node side (waits for the shared handshake). */
-  async sendRequest(method: string, params?: any): Promise<any> {
+  async sendRequest(method: string, params?: unknown): Promise<unknown> {
     await this.ready;
     return this.request(method, params);
   }

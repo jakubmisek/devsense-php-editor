@@ -1,63 +1,61 @@
 /**
- * SignatureHelpProvider — maps Monaco SignatureHelpProvider to devsense-php-ls
- * LSP request textDocument/signatureHelp.
+ * SignatureHelpProvider — maps Monaco SignatureHelpProvider to devsense-php-ls LSP request textDocument/signatureHelp.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface SignatureHelpProviderOptions {
-  selector: any;
-  languageId: string;
+export interface SignatureHelpProviderOptions extends BaseProviderOptions {
   triggerCharacters?: string[];
   retriggerCharacters?: string[];
-  monaco?: any;
 }
 
 export class SignatureHelpProvider extends BaseProvider {
   private readonly triggerCharacters: string[];
   private readonly retriggerCharacters: string[];
 
-  constructor(router: any, options: SignatureHelpProviderOptions) {
+  constructor(router: LspRequestSender, options: SignatureHelpProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
     this.triggerCharacters = options.triggerCharacters ?? ['(', ',', '<'];
     this.retriggerCharacters = options.retriggerCharacters ?? [',', ')'];
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.SignatureHelpProvider = {
       signatureHelpTriggerCharacters: this.triggerCharacters,
       signatureHelpRetriggerCharacters: this.retriggerCharacters,
-      provideSignatureHelp: async (model: any, position: Position, token: CancellationToken, context: any): Promise<ProviderResult<SignatureHelpResult>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
+      provideSignatureHelp: async (model, position, _token, context) => {
+        const active = context.activeSignatureHelp;
+        const params: lsp.SignatureHelpParams = {
+          textDocument: this.toTextDocument(model),
           position: this.toLspPosition(position),
           context: {
-            triggerKind: context.triggerKind,
+            // Monaco and LSP SignatureHelpTriggerKind share values (Invoke=1, TriggerCharacter=2, ContentChange=3).
+            triggerKind: context.triggerKind as number as lsp.SignatureHelpTriggerKind,
             triggerCharacter: context.triggerCharacter,
             isRetrigger: context.isRetrigger,
-            activeSignatureHelp: context.activeSignatureHelp,
+            activeSignatureHelp: active
+              ? {
+                  signatures: active.signatures.map((s) => ({ label: s.label, parameters: s.parameters.map((p) => ({ label: p.label })) })),
+                  activeSignature: active.activeSignature,
+                  activeParameter: active.activeParameter,
+                }
+              : undefined,
           },
         };
         console.log('[SignatureHelpProvider] Sending textDocument/signatureHelp for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/signatureHelp', params);
+          const result = await this.request<lsp.SignatureHelp>('textDocument/signatureHelp', params);
           console.log('[SignatureHelpProvider] Got signature help:', !!result?.signatures?.length);
-          if (!result || !result.signatures || result.signatures.length === 0) return null;
-          const signatures: SignatureInformation[] = result.signatures.map((s: any) => ({
+          if (!result?.signatures?.length) return null;
+          const signatures = result.signatures.map((s): monaco.languages.SignatureInformation => ({
             label: s.label,
-            documentation: s.documentation,
-            parameters: (s.parameters || []).map((p: any) => ({
-              label: typeof p.label === 'string' ? p.label : [p.label[0], p.label[1]],
-              documentation: p.documentation,
-            })),
-            activeParameter: s.activeParameter,
+            documentation: this.fromLspMarkup(s.documentation),
+            parameters: (s.parameters ?? []).map((p) => ({ label: p.label, documentation: this.fromLspMarkup(p.documentation) })),
+            activeParameter: s.activeParameter ?? undefined,
           }));
           return {
-            value: {
-              signatures,
-              activeSignature: result.activeSignature ?? 0,
-              activeParameter: result.activeParameter ?? 0,
-            },
+            value: { signatures, activeSignature: result.activeSignature ?? 0, activeParameter: result.activeParameter ?? 0 },
             dispose: () => { /* no-op */ },
           };
         } catch (err) {
@@ -66,7 +64,6 @@ export class SignatureHelpProvider extends BaseProvider {
         }
       },
     };
-    const disp = monaco.languages.registerSignatureHelpProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerSignatureHelpProvider(this.selector, provider));
   }
 }
