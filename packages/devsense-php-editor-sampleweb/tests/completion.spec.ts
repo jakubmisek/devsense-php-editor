@@ -4,9 +4,8 @@ import { test, expect } from '@playwright/test';
  * textDocument/completion E2E specs for devsense-php-editor-sampleweb.
  *
  * Exercises the Monaco completion widget backed by devsense-php-ls over the
- * WebSocket RPC router. The editor is wired in editor.ts via CompletionProvider
- * (trigger characters include ".", "$", etc.) and main.ts bootstraps the WS
- * connection using the port file served at /php-editor-port.
+ * WebSocket RPC router. Completion works on the sandboxed
+ * untitled-workspace-{id}:// URI when triggered properly.
  *
  * Each test is self-contained: it navigates to /, waits for the Monaco editor
  * to render, and skips gracefully if the PHP language server backend isn't
@@ -26,9 +25,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
-    // Allow the LSP initialize/didOpen handshake to complete and the LS to
-    // index the document before requesting completions.
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(1000);
   });
 
   test('shows completion widget with "echo" after typing "<?php ec"', async ({
@@ -39,8 +36,8 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
     await page.keyboard.insertText('<?php ec');
     // Explicitly trigger completion (Ctrl+Space).
     await page.keyboard.press('Control+Space');
-    // Give the LS time to compute completion items.
-    await page.waitForTimeout(3000);
+    // Give the LS a moment to compute completion items (diagnostics push is async).
+    await page.waitForTimeout(1000);
 
     const completion = page.locator(COMPLETION_LIST);
     await expect(completion).toBeVisible({ timeout: 10000 });
@@ -55,8 +52,8 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
     await page.keyboard.insertText('<?php $x = ');
     // Position caret right after the "$"-style trigger; trigger completion.
     await page.keyboard.press('Control+Space');
-    // Give the LS time to compute completion items.
-    await page.waitForTimeout(3000);
+    // Give the LS a moment to compute completion items.
+    await page.waitForTimeout(1000);
 
     const completion = page.locator(COMPLETION_LIST);
     await expect(completion).toBeVisible({ timeout: 10000 });

@@ -21,16 +21,20 @@
             - generic [ref=e19]: "2"
             - generic [ref=e21]: "3"
             - generic [ref=e24]: "4"
-          - generic [ref=e31]:
-            - generic [ref=e33]: <?php
-            - generic [ref=e35]: "function foo($x){return strlen($x);}"
-            - generic [ref=e37]: "class Bar{public function baz($y){echo $y;}}"
-  - generic [ref=e49] [cursor=pointer]:
-    - generic [ref=e50]:
+          - generic [ref=e25]:
+            - img [ref=e30]
+            - img [ref=e35]
+            - img [ref=e39]
+            - generic [ref=e42]:
+              - generic [ref=e44]: <?php
+              - generic [ref=e46]: "function foo($x){return strlen($x);}"
+              - generic [ref=e48]: "class Bar{public function baz($y){echo $y;}}"
+  - generic [ref=e60] [cursor=pointer]:
+    - generic [ref=e61]:
       - text: Diagnostics
-      - generic [ref=e51]: "0"
-    - button "▾" [ref=e52]
-  - generic [ref=e53]:
+      - generic [ref=e62]: "0"
+    - button "▾" [ref=e63]
+  - generic [ref=e64]:
     - alert
     - alert
 ```

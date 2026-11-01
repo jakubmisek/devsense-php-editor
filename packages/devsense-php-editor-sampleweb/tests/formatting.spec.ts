@@ -3,15 +3,21 @@ import { test, expect } from '@playwright/test';
 /**
  * textDocument/formatting E2E tests.
  *
- * Exercises document formatting (Shift+Alt+F) against a live Monaco editor
- * backed by devsense-php-ls over WebSocket RPC.
+ * Exercises document formatting against a live Monaco editor backed by
+ * devsense-php-ls over WebSocket RPC.
+ *
+ * Note: devsense-php-ls provides formatting via textDocument/rangeFormatting
+ * RPC method. When a selection is active, Monaco binds Shift+Alt+F to
+ * rangeFormatting. We therefore select all text before formatting so the
+ * rangeFormatting path is exercised.
  *
  * Each test:
  *   1. Loads the app and waits for Monaco to render
  *   2. Skips gracefully if the LSP backend isn't responding
  *   3. Types unformatted PHP code
- *   4. Formats the document
- *   5. Asserts the code got reformatted
+ *   4. Selects all text
+ *   5. Formats (Shift+Alt+F → rangeFormatting)
+ *   6. Asserts the code got reformatted
  */
 test.describe('textDocument/formatting', () => {
   test.beforeEach(async ({ page }) => {
@@ -27,10 +33,12 @@ test.describe('textDocument/formatting', () => {
       state: 'visible',
       timeout: 30000,
     });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(1000);
   });
 
-  test('reformats unformatted PHP document on Shift+Alt+F', async ({ page }) => {
+  test('reformats unformatted PHP document via rangeFormatting', async ({
+    page,
+  }) => {
     await page.locator('.monaco-editor').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.type(
@@ -46,11 +54,14 @@ class Bar{public function baz($y){echo $y;}}
       return editors?.[0]?.getValue() ?? '';
     });
 
-    // Format the document (Shift+Alt+F).
+    // Select all text so Shift+Alt+F triggers rangeFormatting.
+    await page.keyboard.press('Control+A');
+
+    // Format the selection (Shift+Alt+F → textDocument/rangeFormatting).
     await page.keyboard.press('Shift+Alt+F');
 
-    // Give devsense-php-ls more time to compute formatting edits.
-    await page.waitForTimeout(4000);
+    // Give the LS a moment to respond (diagnostics push is async, not waited on).
+    await page.waitForTimeout(1000);
 
     // Capture the formatted content after formatting.
     const afterContent = await page.evaluate(() => {

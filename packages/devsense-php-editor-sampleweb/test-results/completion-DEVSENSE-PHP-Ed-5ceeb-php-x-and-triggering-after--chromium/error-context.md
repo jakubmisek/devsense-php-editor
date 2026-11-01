@@ -31,63 +31,14 @@
             - generic [ref=e46]: echo strlen($x);
             - generic [ref=e48]: "}"
             - generic [ref=e50]: <?php $x =
-        - listbox "Suggest" [ref=e65]:
-          - generic [ref=e66]:
-            - listitem "ABDAY_1, Reference" [ref=e67] [cursor=pointer]:
-              - generic [ref=e69]:
-                - generic [ref=e70]: 
-                - generic [ref=e75]: ABDAY_1
-            - listitem "ABDAY_2, Reference" [ref=e77] [cursor=pointer]:
-              - generic [ref=e79]:
-                - generic [ref=e80]: 
-                - generic [ref=e85]: ABDAY_2
-            - listitem "ABDAY_3, Reference" [ref=e86] [cursor=pointer]:
-              - generic [ref=e88]:
-                - generic [ref=e89]: 
-                - generic [ref=e94]: ABDAY_3
-            - listitem "ABDAY_4, Reference" [ref=e95] [cursor=pointer]:
-              - generic [ref=e97]:
-                - generic [ref=e98]: 
-                - generic [ref=e103]: ABDAY_4
-            - listitem "ABDAY_5, Reference" [ref=e104] [cursor=pointer]:
-              - generic [ref=e106]:
-                - generic [ref=e107]: 
-                - generic [ref=e112]: ABDAY_5
-            - listitem "ABDAY_6, Reference" [ref=e113] [cursor=pointer]:
-              - generic [ref=e115]:
-                - generic [ref=e116]: 
-                - generic [ref=e121]: ABDAY_6
-            - listitem "ABDAY_7, Reference" [ref=e122] [cursor=pointer]:
-              - generic [ref=e124]:
-                - generic [ref=e125]: 
-                - generic [ref=e130]: ABDAY_7
-            - listitem "ABMON_1, Reference" [ref=e131] [cursor=pointer]:
-              - generic [ref=e133]:
-                - generic [ref=e134]: 
-                - generic [ref=e139]: ABMON_1
-            - listitem "ABMON_10, Reference" [ref=e140] [cursor=pointer]:
-              - generic [ref=e142]:
-                - generic [ref=e143]: 
-                - generic [ref=e148]: ABMON_10
-            - listitem "ABMON_11, Reference" [ref=e149] [cursor=pointer]:
-              - generic [ref=e151]:
-                - generic [ref=e152]: 
-                - generic [ref=e157]: ABMON_11
-            - listitem "ABMON_12, Reference" [ref=e158] [cursor=pointer]:
-              - generic [ref=e160]:
-                - generic [ref=e161]: 
-                - generic [ref=e166]: ABMON_12
-            - listitem "ABMON_2, Reference" [ref=e167] [cursor=pointer]:
-              - generic [ref=e169]:
-                - generic [ref=e170]: 
-                - generic [ref=e175]: ABMON_2
-  - generic [ref=e177] [cursor=pointer]:
-    - generic [ref=e178]:
+        - generic [ref=e61]: Loading...
+  - generic [ref=e63] [cursor=pointer]:
+    - generic [ref=e64]:
       - text: Diagnostics
-      - generic [ref=e179]: "0"
-    - button "▾" [ref=e180]
-  - generic [ref=e181]:
+      - generic [ref=e65]: "0"
+    - button "▾" [ref=e66]
+  - generic [ref=e67]:
     - alert
     - alert
-    - generic [ref=e182]: Loading...
+    - generic [ref=e68]: Loading...
 ```
