@@ -1,21 +1,25 @@
 /**
- * Browser entry point for devsense-php-editor LSP providers.
+ * Browser entry point: `devsense-php-editor/browser`.
  *
- * Exports all Monaco language providers that forward LSP requests
- * through a WebSocket router to the devsense-php-ls language server.
+ * - `createPhpEditor(container, options)` is the ready-to-use PHP editor component
+ *   (Monaco + WebSocket + LSP handshake + providers + diagnostics).
+ * - The individual Monaco providers and `LspWebSocketClient` are exported for
+ *   advanced use (custom wiring).
  *
- * This bundle is browser-safe: it only depends on 'monaco-editor' and
- * does NOT include Node server code (PhpEditor, LsServer, WsServer, etc.).
- *
- * Usage (sampleweb / any browser client):
- *   import { CompletionProvider, HoverProvider, ... } from './providers.browser.js';
- *   const ws = new WsClient('ws://localhost:PORT');
- *   const completion = new CompletionProvider(ws, { selector, languageId: 'php' });
- *   completion.register(monaco.languages);
- *
- * Providers accept any object with a `sendRequest(method, params)` method
- * (the WsClient satisfies this interface).
+ * Browser-safe: no Node server code. `monaco-editor` is a runtime dependency that
+ * the consumer's bundler resolves (it is not inlined into this bundle).
  */
+export { createPhpEditor } from '../browser/createPhpEditor';
+export type {
+  CreatePhpEditorOptions,
+  PhpEditorInstance,
+  PhpEditorTheme,
+  PhpEditorDiagnostic,
+  PhpEditorConnectionState,
+} from '../browser/createPhpEditor';
+export { ensureMonacoWorkers } from '../browser/workers';
+export { LspWebSocketClient } from '../browser/LspWebSocketClient';
+export type { JsonRpcMessage } from '../browser/LspWebSocketClient';
 export { CompletionProvider } from './CompletionProvider';
 export type { CompletionProviderOptions } from './CompletionProvider';
 export { HoverProvider } from './HoverProvider';

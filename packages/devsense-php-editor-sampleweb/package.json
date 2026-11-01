@@ -13,14 +13,12 @@
     "test": "playwright test"
   },
   "dependencies": {
-    "devsense-php-editor": "*",
-    "monaco-editor": "^0.57.0"
+    "devsense-php-editor": "*"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
     "typescript": "^5.8.2",
     "vite": "^7.3.5",
-    "concurrently": "^8.2.2",
-    "vscode-languageserver-protocol": "^3.17.5"
+    "concurrently": "^8.2.2"
   }
 }
