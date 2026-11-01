@@ -129,6 +129,32 @@ test('Router: workspace/applyEdit is forwarded to the owning client and its answ
   assert.deepEqual(ls.sent.find((m) => m.id === 100)?.result, { applied: false });
 });
 
+test('Router: executeCommand is serialized and replays the caller\'s last codeAction first', async () => {
+  const { ls, router, fromClient } = setup(undefined);
+  await router.whenReady();
+  const ca = (uri: string) => ({ textDocument: { uri }, range: { start: { line: 1, character: 7 }, end: { line: 1, character: 7 } }, context: { diagnostics: [] } });
+  fromClient('c1', { jsonrpc: '2.0', id: 1, method: 'textDocument/codeAction', params: ca('u1') });
+  fromClient('c2', { jsonrpc: '2.0', id: 1, method: 'textDocument/codeAction', params: ca('u2') });
+  await tick();
+  const mark = ls.sent.length;
+  fromClient('c1', { jsonrpc: '2.0', id: 2, method: 'workspace/executeCommand', params: { command: 'x', arguments: ['A$6'] } });
+  fromClient('c2', { jsonrpc: '2.0', id: 2, method: 'workspace/executeCommand', params: { command: 'x', arguments: ['A$6'] } });
+  await tick();
+  // c1's codeAction is replayed (c2's was the latest), then only c1's command is in flight.
+  let sent = ls.sent.slice(mark);
+  assert.equal(sent[0].method, 'textDocument/codeAction');
+  assert.equal((sent[0].params as { textDocument: { uri: string } }).textDocument.uri, 'u1');
+  ls.emit('message', { jsonrpc: '2.0', id: sent[0].id, result: [] });
+  await tick();
+  sent = ls.sent.slice(mark);
+  assert.deepEqual(sent.map((m) => m.method), ['textDocument/codeAction', 'workspace/executeCommand']);
+  ls.emit('message', { jsonrpc: '2.0', id: sent[1].id, result: null });
+  await tick();
+  sent = ls.sent.slice(mark);
+  assert.deepEqual(sent.map((m) => m.method), ['textDocument/codeAction', 'workspace/executeCommand', 'textDocument/codeAction', 'workspace/executeCommand'].slice(0, sent.length));
+  assert.equal((sent[2].params as { textDocument: { uri: string } }).textDocument.uri, 'u2');
+});
+
 test('PhpEditor (real LS): licence option is never logged nor sent to a WebSocket client', { timeout: 60000 }, async () => {
   const logs: string[] = [];
   const orig = { log: console.log, error: console.error, warn: console.warn };

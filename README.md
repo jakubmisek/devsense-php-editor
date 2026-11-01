@@ -302,8 +302,23 @@ sends to `devsense-php-ls`. It overrides any `"0"` in `initializationOptions`.
 - `$/devsense/stats` exposes only a non-secret `licensed: boolean`.
 - Keep `DEVSENSE_PHP_LS_LICENSE` out of the browser bundle. Never put it in a `VITE_*` variable or in client code.
 
-Premium behaviour with a real licence isn't covered by this repo's automated tests, because no licence is available
-in CI. The tests cover the unlicensed `(PREMIUM)` flow and check that the licence is wired in and kept secret.
+**How licensed code actions apply.** With a licence, the titles lose `(PREMIUM)`. devsense-php-ls applies their
+edits in two ways, and both work in the browser component:
+- **Direct `WorkspaceEdit`.** Example: `Short array syntax []` (it also runs a `devsense:formatCode` command afterwards).
+- **A command.** Examples: `devsense:implementctor` and `devsense:adddocblock`. The command runs via
+  `workspace/executeCommand`, and the server then sends `workspace/applyEdit`. The Router forwards that only to the
+  client owning the document.
+
+`codeAction/resolve` is also supported. devsense-php-ls currently returns the actions unchanged.
+
+The language server resolves command arguments (such as `["Construct","A$6"]`) against the most recent
+`textDocument/codeAction` it answered. So the Router runs `workspace/executeCommand` one at a time across clients.
+Before running a client's command, it replays that client's last code-action request if another client asked more
+recently. Without this, two users running the same action at once got a single edit.
+
+**Tests.** The licensed Playwright tests run only when `DEVSENSE_PHP_LS_LICENSE` is set in the environment of the
+test run, and the unlicensed `(PREMIUM)` test runs only when it isn't. This means CI without a secret stays green.
+Never add the licence to CI config or to any committed file.
 
 ## Bundler requirements & limitations
 
