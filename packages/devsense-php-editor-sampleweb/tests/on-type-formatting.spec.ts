@@ -34,11 +34,12 @@ test.describe('textDocument/onTypeFormatting', () => {
     expect(!backendOk, 'LSP backend not responding at /php-editor-port').toBe(false);
 
     await page.locator('.monaco-editor').click();
-    await page.keyboard.press('Control+A');
+    // Start from "<?php\n" via the model: typing Enter right after "<?php" could accept the "<?php" completion item.
+    await page.evaluate(() => { const ed = (window as any).monaco.editor.getEditors()[0]; ed.setValue('<?php\n'); ed.setPosition({ lineNumber: 2, column: 1 }); ed.focus(); });
+    await page.waitForTimeout(300);
     // Type unformatted PHP (opening brace on the same line, no closing brace).
     await page.keyboard.type(
-      `<?php
-function foo($x){
+      `function foo($x){
 return strlen($x);
 `
     );

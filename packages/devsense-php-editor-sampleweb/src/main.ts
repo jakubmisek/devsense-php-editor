@@ -111,8 +111,13 @@ async function main(): Promise<void> {
   DiagnosticsPanel.injectStyles();
   const diagnostics = new DiagnosticsPanel();
 
+  // Optional `?doc=Name.php` sets the document file name (the LS derives e.g. the suggested class name from it).
+  const docParam = new URLSearchParams(location.search).get('doc');
+  const documentName = docParam && /^[A-Za-z0-9_-]+\.php$/.test(docParam) ? docParam : undefined;
+
   const phpEditor = createPhpEditor(document.getElementById('editor-container')!, {
     serverUrl: wsUrl,
+    documentName,
     initialCode: SAMPLE_CODE,
     theme: toEditorTheme(theme.getTheme()),
   });
