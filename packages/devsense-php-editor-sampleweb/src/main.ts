@@ -2,8 +2,8 @@
  * Entry point for devsense-php-editor-sampleweb.
  *
  * Bootstraps theme, top bar, editor content area with Monaco Editor.
- * Monaco Editor is imported directly from 'monaco-editor' (available
- * transitively through devsense-php-editor in the monorepo workspace).
+ * Monaco Editor is imported from 'monaco-editor' (transitive dependency
+ * through devsense-php-editor in the monorepo workspace).
  *
  * Uses PhpEditorUI to wire Monaco editor with WebSocket RPC to the
  * devsense-php-ls language server via the PhpEditor server.
@@ -13,6 +13,82 @@ import { ThemeManager } from './theme';
 import { PhpEditorUI } from './editor';
 
 const WS_URL = (window as any).PHP_EDITOR_WS_URL || 'ws://127.0.0.1:8765';
+
+/** Resolve the WebSocket URL to the PhpEditor server.
+ *
+ * PhpEditor writes its bound WS port to `public/php-editor-port`, which Vite
+ * serves at `http://localhost:5173/php-editor-port`. Fetching it lets the
+ * client connect to whatever port PhpEditor actually bound (Playwright picks
+ * an ephemeral port when none is configured), so LSP-backed tests run against
+ * a live backend.
+ *
+ * Fallback chain:
+ *   1. window.PHP_EDITOR_WS_URL (manual override)
+ *   2. /php-editor-port port file served by Vite
+ *   3. meta[name="php-editor-ws-url"] content
+ *   4. hardcoded default ws://127.0.0.1:8765
+ */
+async function resolveWsUrl(): Promise<string> {
+  const override = (window as any).PHP_EDITOR_WS_URL;
+  if (override) return override as string;
+
+  // Try the port file served by Vite (public/php-editor-port).
+  try {
+    const res = await fetch('/php-editor-port', { cache: 'no-store' });
+    if (res.ok) {
+      const port = (await res.text()).trim();
+      if (port && /^\d+$/.test(port)) {
+        return `ws://127.0.0.1:${port}`;
+      }
+    }
+  } catch {
+    // ignore — fall through to meta tag / default
+  }
+
+  // Meta tag set by the server (if any).
+  const wsUrlFromMeta = document.querySelector('meta[name="php-editor-ws-url"]')?.getAttribute('content');
+  if (wsUrlFromMeta) return wsUrlFromMeta;
+
+  return WS_URL;
+}
+
+// Get the actual monaco object (handle .default for ESM/CJS interop)
+const monacoObj = (monaco as any).default ?? monaco;
+
+// Expose monaco globally so providers.browser.js can access SymbolKind, Range, Position, etc.
+// monaco-editor ESM exports namespaced under editor/ and languages/, so we flatten them.
+(window as any).monaco = {
+  ...monacoObj,
+  editor: monacoObj.editor,
+  languages: monacoObj.languages,
+  // Flatten commonly used enums/classes to top level for providers.browser.js
+  Position: monacoObj.editor.Position,
+  Range: monacoObj.editor.Range,
+  Selection: monacoObj.editor.Selection,
+  SymbolKind: monacoObj.languages.SymbolKind,
+  SymbolTag: monacoObj.languages.SymbolTag,
+  InlayHintKind: monacoObj.languages.InlayHintKind,
+  CompletionItemKind: monacoObj.languages.CompletionItemKind,
+  DocumentHighlightKind: monacoObj.languages.DocumentHighlightKind,
+  SignatureHelpTriggerKind: monacoObj.languages.SignatureHelpTriggerKind,
+  CompletionTriggerKind: monacoObj.languages.CompletionTriggerKind,
+  InlineCompletionTriggerKind: monacoObj.languages.InlineCompletionTriggerKind,
+  MarkerSeverity: monacoObj.editor.MarkerSeverity,
+  EndOfLineSequence: monacoObj.editor.EndOfLineSequence,
+  EndOfLinePreference: monacoObj.editor.EndOfLinePreference,
+  ScrollbarVisibility: monacoObj.editor.ScrollbarVisibility,
+};
+
+// Configure Monaco Editor web worker paths before any editor creation
+(window as any).MonacoEnvironment = {
+  baseUrl: '/monaco-editor/',
+  getWorkerUrl: (moduleId: string, label: string) => {
+    if (label === 'editorWorkerService') {
+      return '/monaco-editor/vs/editor/editor.worker.js';
+    }
+    return `/monaco-editor/vs/${moduleId}`;
+  },
+};
 
 async function main(): Promise<void> {
   const app = document.getElementById('app')!;
@@ -75,12 +151,19 @@ async function main(): Promise<void> {
 
   console.log('[main] Monaco Editor module loaded');
 
-  // Initialize PhpEditorUI with WebSocket connection to PhpEditor server.
+  // Resolve the WS URL (port file -> meta tag -> default). Async but non-blocking;
+  // the editor connects without waiting for WS, so this resolves before PhpEditorUI uses it.
+  const wsUrl = await resolveWsUrl();
+
+  console.log('[main] Using WS URL:', wsUrl);
+
+  console.log('[main] Monaco editor object keys:', Object.keys(monacoObj).filter(k => k.startsWith('editor') || k.startsWith('languages')).join(', '));
+
   const editorUI = new PhpEditorUI({
-    wsUrl: WS_URL,
+    wsUrl: wsUrl,
     containerId: 'editor-container',
     initialContent: '<?php\n\nfunction foo($x) {\n  echo strlen($x);\n}\n',
-    monaco: (monaco as any).default ?? monaco,
+    monaco: monacoObj,
   });
 
   const themeSelect = document.getElementById('theme-select') as HTMLSelectElement;
