@@ -51,14 +51,10 @@ return strlen($x);
     // Type the on-type formatting trigger character '}'.
     await page.keyboard.type('}');
 
-    // Give devsense-php-ls time to compute on-type formatting edits.
-    await page.waitForTimeout(1500);
-
-    // Capture the content after on-type formatting.
-    const afterContent = await page.evaluate(() => {
-      const editors = (window as any).monaco?.editor?.getEditors?.();
-      return editors?.[0]?.getValue() ?? '';
-    });
+    // Wait (up to 10 s under load) for devsense-php-ls to apply on-type formatting edits.
+    const read = () => page.evaluate(() => (window as any).monaco?.editor?.getEditors?.()?.[0]?.getValue() ?? '');
+    await expect.poll(read, { timeout: 10000 }).toMatch(/\n\s+return/);
+    const afterContent = await read();
 
     // Assert the content actually changed (on-type formatting applied).
     expect(afterContent).not.toBe(beforeContent);
