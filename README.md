@@ -83,7 +83,7 @@ npm run dev          # builds the library, starts PhpEditor + Vite on http://loc
 npm install devsense-php-editor
 ```
 
-`monaco-editor` comes with the package (a regular dependency). See [Monaco and bundler requirements](#monaco-and-bundler-requirements).
+`monaco-editor` comes with the package (a regular dependency). See [Monaco and bundler requirements](#bundler-requirements--limitations).
 
 The package has two entry points:
 
@@ -226,28 +226,7 @@ The entry also exports types (`CreatePhpEditorOptions`, `PhpEditorInstance`, `Ph
 - The 15 provider classes, each created with `new XProvider(sender, { selector, languageId, monaco, ...extra })` and
   activated with `.register(monaco)`.
 
-Note that the component registers its providers for the `php` language globally in Monaco. So use one editor per page,
-or dispose the old one before creating another.
-
-#### Monaco and bundler requirements
-
-- `monaco-editor` is a regular dependency of `devsense-php-editor`, so consumers don't install or import it. The browser
-  bundle keeps `import 'monaco-editor'` as a bare import, and your bundler resolves it, together with Monaco's CSS and
-  fonts.
-- The editor worker is imported with Vite's `?worker` syntax (`monaco-editor/editor/editor.worker?worker`), and your
-  build emits it as a separate module worker. **Use Vite.** For other bundlers, either make `?worker` imports work (a
-  plugin or alias), or define `self.MonacoEnvironment` yourself before creating the editor and pass
-  `setupWorkers: false`.
-- When the package is installed from npm (not linked as a workspace), keep it out of Vite's dependency pre-bundling,
-  so that Vite itself handles the `?worker` import:
-
-  ```ts
-  // vite.config.ts
-  export default defineConfig({
-    optimizeDeps: { exclude: ['devsense-php-editor'], include: ['monaco-editor'] },
-  });
-  ```
-- Don't copy Monaco into a public folder.
+See [Bundler requirements & limitations](#bundler-requirements--limitations) before you integrate it.
 
 ### Configuration and environment variables
 
@@ -261,6 +240,49 @@ or dispose the old one before creating another.
 In particular `textDocument/inlineCompletion` returns `null` in every case we tried without a licence. The client
 provider is implemented, but ghost text appears only with a licensed (and possibly AI-enabled) server. Set
 `DEVSENSE_PHP_LS_LICENSE` or pass `licenseKey`.
+
+## Bundler requirements & limitations
+
+These trade-offs come from the browser component (`createPhpEditor`):
+
+1. **Monaco is a regular dependency, resolved by your app's bundler.** `monaco-editor` is a `dependency` of
+   `devsense-php-editor`, so you don't install or import it yourself; `PhpEditorInstance.monaco` gives you the namespace
+   if you need it. The package's browser bundle does **not** include Monaco. It keeps `import 'monaco-editor'` as a bare
+   import, and your bundler resolves it once, together with Monaco's CSS and fonts. Don't copy Monaco into a public
+   folder.
+
+2. **Vite is effectively required for worker loading.** The editor worker is loaded with Vite's `?worker` import
+   (`monaco-editor/editor/editor.worker?worker`), which your build emits as a separate module worker. Monaco's own
+   built-in worker loading (`new URL(..., import.meta.url)`) doesn't survive Vite's build: it is inlined as a `data:` URL
+   with unresolvable imports. **Other bundlers (webpack, Rollup, esbuild, ...)** must either support `?worker` imports
+   (a plugin or alias), or pass `setupWorkers: false` and set the worker up themselves before creating the editor:
+
+   ```ts
+   // webpack 5 / any bundler that understands new Worker(new URL(...)):
+   self.MonacoEnvironment = {
+     getWorker: () => new Worker(new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url), { type: 'module' }),
+   };
+   const php = createPhpEditor(el, { serverUrl, setupWorkers: false });
+   ```
+
+   PHP needs only the generic editor worker. Without any worker, Monaco falls back to running it on the main thread
+   (it works, but more slowly).
+
+3. **npm-installed consumers need an `optimizeDeps` tweak.** Inside this monorepo the package is a linked workspace,
+   so Vite processes it as source. When it comes from npm, keep it out of Vite's dependency pre-bundling (esbuild
+   can't handle `?worker`), but still pre-bundle Monaco:
+
+   ```ts
+   // vite.config.ts
+   import { defineConfig } from 'vite';
+   export default defineConfig({
+     optimizeDeps: { exclude: ['devsense-php-editor'], include: ['monaco-editor'] },
+   });
+   ```
+
+4. **One editor per page.** Each `createPhpEditor` registers its 15 providers for the `php` language globally in
+   Monaco, and they are bound to that instance's WebSocket. A second live editor would register duplicates. Call
+   `dispose()` on the old editor before you create another.
 
 ## Sample web app
 
