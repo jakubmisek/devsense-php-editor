@@ -8,8 +8,8 @@ This is an npm-workspaces monorepo with two packages:
 
 | Package | What it is |
 | --- | --- |
-| [`packages/devsense-php-editor`](packages/devsense-php-editor) | The library. Node side: the `PhpEditor` class (spawns `devsense-php-ls`, runs the WebSocket server and routes messages). Browser side: `devsense-php-editor/browser`, a set of Monaco language providers that forward LSP requests. |
-| [`packages/devsense-php-editor-sampleweb`](packages/devsense-php-editor-sampleweb) | A sample web app (Vite + Monaco) that uses the library, plus the Playwright end-to-end tests. |
+| [`packages/devsense-php-editor`](packages/devsense-php-editor) | The library. Node side: the `PhpEditor` class (spawns `devsense-php-ls`, runs the WebSocket server and routes messages). Browser side: `devsense-php-editor/browser`, the `createPhpEditor` component (Monaco editor + WebSocket LSP client + providers + diagnostics). |
+| [`packages/devsense-php-editor-sampleweb`](packages/devsense-php-editor-sampleweb) | A demo page (Vite) that only uses `createPhpEditor`: page layout, theme switcher, diagnostics panel, sample code. It has no Monaco dependency and no editor code. It also contains the Playwright end-to-end tests. |
 
 ## Architecture
 
@@ -39,7 +39,7 @@ This is an npm-workspaces monorepo with two packages:
 
 ## Features
 
-Monaco providers in `devsense-php-editor/browser`, each mapped to an LSP request:
+`createPhpEditor` registers these Monaco providers (also exported individually from `devsense-php-editor/browser`), each mapped to an LSP request:
 
 | Provider | LSP method |
 | --- | --- |
@@ -59,8 +59,8 @@ Monaco providers in `devsense-php-editor/browser`, each mapped to an LSP request
 | `CodeLensProvider` | `textDocument/codeLens` (+ `codeLens/resolve`) |
 | `RenameProvider` | `textDocument/rename` |
 
-Diagnostics come from the server as `textDocument/publishDiagnostics` notifications. The client turns them into Monaco
-markers (see the sample's `editor.ts`).
+Diagnostics come from the server as `textDocument/publishDiagnostics` notifications. `createPhpEditor` turns them into
+Monaco markers and emits them through `onDiagnostics`.
 
 ## Requirements
 
@@ -80,11 +80,10 @@ npm run dev          # builds the library, starts PhpEditor + Vite on http://loc
 ## Using the `devsense-php-editor` package
 
 ```bash
-npm install devsense-php-editor monaco-editor
+npm install devsense-php-editor
 ```
 
-`monaco-editor` is an (optional) peer dependency. The library uses only its types. Your app imports and bundles Monaco
-itself.
+`monaco-editor` comes with the package (a regular dependency). See [Monaco and bundler requirements](#monaco-and-bundler-requirements).
 
 The package has two entry points:
 
@@ -165,97 +164,90 @@ npx devsense-php-editor [portFile]     # same as: node dist/index.js [portFile]
 
 It starts `PhpEditor` with the defaults (port 8765), optionally writes the port to `portFile`, and stops cleanly on Ctrl+C.
 
-### Browser side: `devsense-php-editor/browser`
+### Browser side: `createPhpEditor` from `devsense-php-editor/browser`
 
-Every provider has the same shape:
-
-```ts
-new XProvider(sender: LspRequestSender, options: { selector, languageId, monaco, ...extra })
-provider.register(monaco)   // registers with monaco.languages.*
-provider.dispose()          // unregisters
-```
-
-- `sender` is any object with `sendRequest(method: string, params?: unknown): Promise<unknown>` that resolves with the
-  LSP `result`. The package does **not** ship a WebSocket client. A minimal one is below; the sample's
-  [`ws-client.ts`](packages/devsense-php-editor-sampleweb/src/ws-client.ts) is a fuller version.
-- `monaco` is the `monaco-editor` module namespace (`import * as monaco from 'monaco-editor'`). Providers read
-  `monaco.Range`, `monaco.languages.*` enums and so on from it.
-- Extra options: `SignatureHelpProvider` takes `triggerCharacters`, `OnTypeFormattingProvider` takes
-  `autoFormatTriggerCharacters`, and `SemanticTokensProvider` takes a `legend`.
-- Exported types: `MonacoApi`, `LspRequestSender`, `BaseProviderOptions` and `XProviderOptions` for each provider.
+The browser part is a ready-made editor component. The server class is `PhpEditor` (from `devsense-php-editor`); the
+browser function is `createPhpEditor` (from `devsense-php-editor/browser`). `createPhpEditor` creates the Monaco
+editor, connects the WebSocket, runs the LSP client handshake (`initialize` / `initialized`), waits for the server's
+`client/workspace` message and opens the document under that `untitled-workspace-{id}://` URI. It also sends
+`didOpen` / `didChange` / `didClose`, registers all 15 providers, turns `publishDiagnostics` into Monaco markers and
+sets up the Monaco worker.
 
 ```ts
-import * as monaco from 'monaco-editor';
-import EditorWorker from 'monaco-editor/editor/editor.worker?worker'; // Vite syntax
-import {
-  CompletionProvider, HoverProvider, SignatureHelpProvider, DefinitionProvider, ReferencesProvider,
-  DocumentSymbolProvider, CodeActionProvider, FormattingProvider, RangeFormattingProvider,
-  OnTypeFormattingProvider, SemanticTokensProvider, InlineCompletionProvider, InlayHintsProvider,
-  CodeLensProvider, RenameProvider, type LspRequestSender,
-} from 'devsense-php-editor/browser';
+import { createPhpEditor } from 'devsense-php-editor/browser';
 
-self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
+const php = createPhpEditor(document.getElementById('editor')!, {
+  serverUrl: 'ws://127.0.0.1:8765',
+  initialCode: '<?php\necho strlen("hi");\n',
+  theme: 'auto',
+});
 
-// 1. Minimal JSON-RPC client over WebSocket.
-const wsUrl = document.querySelector('meta[name="php-editor-ws-url"]')!.getAttribute('content')!;
-const socket = new WebSocket(wsUrl);
-let nextId = 1;
-const pending = new Map<number, (result: unknown) => void>();
-let onWorkspace!: (uri: string) => void;
-const workspaceUri = new Promise<string>((r) => (onWorkspace = r));
-const send = (msg: object) => socket.send(JSON.stringify({ jsonrpc: '2.0', ...msg }));
-const notify = (method: string, params: unknown) => send({ method, params });
-const sender: LspRequestSender = {
-  sendRequest: (method, params) => new Promise((resolve) => {
-    const id = nextId++;
-    pending.set(id, resolve);
-    send({ id, method, params });
-  }),
-};
-socket.onmessage = (ev) => {
-  const msg = JSON.parse(ev.data);
-  if (msg.id != null && pending.has(msg.id)) { pending.get(msg.id)!(msg.result ?? null); pending.delete(msg.id); }
-  else if (msg.method === 'client/workspace') onWorkspace(msg.params.workspaceUri);
-  else if (msg.method === 'textDocument/publishDiagnostics') { /* map to monaco.editor.setModelMarkers(...) */ }
-};
-await new Promise((r) => socket.addEventListener('open', r, { once: true }));
+php.onDiagnostics((list) => console.log(list.length, 'diagnostics'));
+php.ready.catch((err) => console.warn('language server unavailable', err)); // editing still works
 
-// 2. Handshake (answered from the server's cache) and a document in this client's sandbox.
-await sender.sendRequest('initialize', { processId: null, rootUri: null, capabilities: {} });
-notify('initialized', {});
-const uri = monaco.Uri.parse(`${await workspaceUri}untitled.php`);
-const model = monaco.editor.createModel('<?php\necho strlen("hi");\n', 'php', uri);
-const editor = monaco.editor.create(document.getElementById('editor')!, { model });
-notify('textDocument/didOpen', { textDocument: { uri: uri.toString(), languageId: 'php', version: 1, text: model.getValue() } });
-model.onDidChangeContent(() => notify('textDocument/didChange', {
-  textDocument: { uri: uri.toString(), version: model.getVersionId() },
-  contentChanges: [{ text: model.getValue() }],
-}));
-
-// 3. Register the providers.
-const opts = { selector: { language: 'php' }, languageId: 'php', monaco };
-const providers = [
-  new CompletionProvider(sender, opts),
-  new HoverProvider(sender, opts),
-  new SignatureHelpProvider(sender, { ...opts, triggerCharacters: ['(', ','] }),
-  new DefinitionProvider(sender, opts),
-  new ReferencesProvider(sender, opts),
-  new DocumentSymbolProvider(sender, opts),
-  new CodeActionProvider(sender, opts),
-  new FormattingProvider(sender, opts),
-  new RangeFormattingProvider(sender, opts),
-  new OnTypeFormattingProvider(sender, { ...opts, autoFormatTriggerCharacters: ['}', ';'] }),
-  new SemanticTokensProvider(sender, { ...opts, legend: { tokenTypes: [], tokenModifiers: [] } }),
-  new InlineCompletionProvider(sender, opts),
-  new InlayHintsProvider(sender, opts),
-  new CodeLensProvider(sender, opts),
-  new RenameProvider(sender, opts),
-];
-providers.forEach((p) => p.register(monaco));
+php.setTheme('dark');
+php.setValue('<?php\n');
+console.log(php.getValue());
+// later: php.dispose();
 ```
 
-Load Monaco through your bundler from the `monaco-editor` package (workers, CSS and fonts all resolve from the
-package). Don't copy Monaco into a public folder.
+`createPhpEditor(container: HTMLElement, options: CreatePhpEditorOptions): PhpEditorInstance`
+
+| Option | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `serverUrl` | `string` | (required) | WebSocket URL of the server-side `PhpEditor`. |
+| `initialCode` | `string` | `''` | Initial PHP source. |
+| `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` | `'auto'` follows `prefers-color-scheme`. |
+| `documentName` | `string` | `'untitled.php'` | File name inside the client workspace. |
+| `editorOptions` | `monaco.editor.IStandaloneEditorConstructionOptions` | – | Merged over the defaults (`automaticLayout`, minimap, font size 14). |
+| `setupWorkers` | `boolean` | `true` | Install `self.MonacoEnvironment` with the editor worker, unless the page already set one. |
+| `initializationOptions` | `Record<string, unknown>` | – | Sent with the client `initialize`. The server answers that from its cache, so this has no effect on the shared LS. |
+
+`PhpEditorInstance`:
+
+| Member | Meaning |
+| --- | --- |
+| `monaco` | The `monaco-editor` namespace the component uses (so you never import Monaco yourself). |
+| `editor` | The `IStandaloneCodeEditor`. |
+| `ready` | `Promise<void>`. Resolves when the editor is connected, initialized and its providers are registered; rejects if the connection fails. |
+| `getValue()` / `setValue(code)` | Read / replace the document text. |
+| `setTheme(theme)` / `getTheme()` | `'light' \| 'dark' \| 'auto'`. |
+| `getDocumentUri()` | e.g. `untitled-workspace-client-1://untitled.php` (empty until connected). |
+| `getConnectionState()` | `'connecting' \| 'connected' \| 'disconnected' \| 'failed'`. |
+| `onDiagnostics(cb)` | `cb(PhpEditorDiagnostic[])` with the full list each time the server publishes it. Positions are 1-based; `severity` is LSP (1 Error, 2 Warning, 3 Information, 4 Hint). Returns `{ dispose() }`. |
+| `onConnectionStateChange(cb)` | Connection state changes. Returns `{ dispose() }`. |
+| `onServerMessage(cb)` | `window/showMessage` and `window/logMessage` as `{ type, message }`. Returns `{ dispose() }`. |
+| `dispose()` | Sends `didClose`, unregisters the providers, disposes the editor and the model, closes the socket. |
+
+The entry also exports types (`CreatePhpEditorOptions`, `PhpEditorInstance`, `PhpEditorTheme`, `PhpEditorDiagnostic`,
+`PhpEditorConnectionState`) and, for custom wiring, the building blocks:
+- `LspWebSocketClient`, a JSON-RPC WebSocket client implementing `LspRequestSender`.
+- `ensureMonacoWorkers()`.
+- The 15 provider classes, each created with `new XProvider(sender, { selector, languageId, monaco, ...extra })` and
+  activated with `.register(monaco)`.
+
+Note that the component registers its providers for the `php` language globally in Monaco. So use one editor per page,
+or dispose the old one before creating another.
+
+#### Monaco and bundler requirements
+
+- `monaco-editor` is a regular dependency of `devsense-php-editor`, so consumers don't install or import it. The browser
+  bundle keeps `import 'monaco-editor'` as a bare import, and your bundler resolves it, together with Monaco's CSS and
+  fonts.
+- The editor worker is imported with Vite's `?worker` syntax (`monaco-editor/editor/editor.worker?worker`), and your
+  build emits it as a separate module worker. **Use Vite.** For other bundlers, either make `?worker` imports work (a
+  plugin or alias), or define `self.MonacoEnvironment` yourself before creating the editor and pass
+  `setupWorkers: false`.
+- When the package is installed from npm (not linked as a workspace), keep it out of Vite's dependency pre-bundling,
+  so that Vite itself handles the `?worker` import:
+
+  ```ts
+  // vite.config.ts
+  export default defineConfig({
+    optimizeDeps: { exclude: ['devsense-php-editor'], include: ['monaco-editor'] },
+  });
+  ```
+- Don't copy Monaco into a public folder.
 
 ### Configuration and environment variables
 
@@ -282,6 +274,9 @@ From the repo root (or use the same script names inside `packages/devsense-php-e
 
 The sample finds the WebSocket URL in this order: `window.PHP_EDITOR_WS_URL`, the `/php-editor-port` file served by Vite,
 `<meta name="php-editor-ws-url">`, then `ws://127.0.0.1:8765`.
+
+For the Playwright tests the demo exposes `window.phpEditor` (the component instance) and `window.monaco`
+(`phpEditor.monaco`).
 
 ## Tests and typecheck
 
@@ -324,10 +319,11 @@ Expected result today: 30 passed, 5 failed (the above).
     │       ├── lsp/client.ts         # JSON-RPC over the LS stdio
     │       ├── server/               # LsServer (process), WsServer (WebSocket), Router (shared LS, fake initialize, routing)
     │       ├── workspace/VirtualWorkspace.ts   # untitled-workspace-{id}:// per client
+    │       ├── browser/              # createPhpEditor component, LspWebSocketClient, Monaco worker setup
     │       └── providers/            # Monaco providers; browser-index.ts = devsense-php-editor/browser
-    └── devsense-php-editor-sampleweb/   # sample app + tests
+    └── devsense-php-editor-sampleweb/   # demo page + tests (depends only on devsense-php-editor)
         ├── index.html, vite.config.ts, tsconfig.json, playwright.config.ts
-        ├── src/                      # main.ts, editor.ts (provider wiring), ws-client.ts, diagnostics.ts, theme.ts, types.ts
+        ├── src/                      # main.ts (layout + createPhpEditor), diagnostics.ts (panel), theme.ts (switcher), types.ts (test hooks)
         └── tests/                    # Playwright specs
 ```
 
