@@ -9,8 +9,9 @@
     "prebuild": "npm run build --prefix ../devsense-php-editor",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p .",
-    "test": "playwright test"
+    "typecheck": "tsc --noEmit -p . && tsc -p tsconfig.server.json",
+    "test": "playwright test",
+    "start": "node server/production.js"
   },
   "dependencies": {
     "devsense-php-editor": "*"

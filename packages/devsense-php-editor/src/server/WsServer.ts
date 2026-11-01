@@ -1,10 +1,15 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
+import type { Server as HttpServer } from 'http';
 import type { JsonRpcMessage } from '../lsp/client';
 
 export interface WsServerOptions {
   port?: number;
   host?: string;
+  /** Attach to an existing HTTP(S) server instead of listening on `port` (one port for static files + WS). */
+  server?: HttpServer;
+  /** Only accept WebSocket upgrades on this path (e.g. `/lsp`). Default: any path. */
+  path?: string;
 }
 
 export interface WsClient {
@@ -39,10 +44,15 @@ export class WsServer extends EventEmitter {
 
   start(): Promise<number> {
     return new Promise((resolve, reject) => {
-      this.wss = new WebSocketServer({
-        port: this.options.port || 0,
-        host: this.options.host,
-      });
+      const { server, path } = this.options;
+      if (server) {
+        this.wss = new WebSocketServer({ server, path });
+        const addr = server.address();
+        const listening = () => { const a = server.address(); resolve(typeof a === 'object' && a ? a.port : 0); };
+        if (addr) listening(); else server.once('listening', listening);
+      } else {
+        this.wss = new WebSocketServer({ port: this.options.port || 0, host: this.options.host, path });
+      }
 
       this.wss.on('listening', () => {
         const addr = this.wss!.address();

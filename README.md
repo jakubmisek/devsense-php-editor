@@ -118,6 +118,8 @@ import { PhpEditor, type PhpEditorOptions } from 'devsense-php-editor';
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `port` | `number` | `8765` | WebSocket port. `0` picks a free port. |
+| `server` | `http.Server` | — | Attach to an existing HTTP(S) server instead of listening; `port`/`host` are ignored. |
+| `path` | `string` | — | Accept WebSocket upgrades only on this path, e.g. `/lsp`. |
 | `host` | `string` | `'127.0.0.1'` | Interface the WebSocket server binds to. |
 | `license` | `string` | `process.env.DEVSENSE_PHP_LS_LICENSE` | Licence key, or the whole offline-activation `{JSON CODE}` string. Sent only in the server's own `initialize` as `initializationOptions["0"]`. Never sent to browsers, never logged. See [Premium features & licensing](#premium-features--licensing). |
 | `licenseKey` | `string` | – | Deprecated alias of `license`. |
@@ -370,10 +372,10 @@ From the repo root (or use the same script names inside `packages/devsense-php-e
 | --- | --- |
 | `npm run dev` | `predev` builds the library, then `concurrently` runs the PhpEditor CLI (writes its port to `public/php-editor-port`) and Vite on `http://localhost:5173` (bound to `0.0.0.0`). |
 | `npm run build` | Builds the library, then `vite build` builds the app into `packages/devsense-php-editor-sampleweb/dist`. |
-| `npm run preview -w packages/devsense-php-editor-sampleweb` | `vite preview` serves the built `dist`. It doesn't start a language server. Run `node packages/devsense-php-editor/dist/index.js` alongside it (port 8765, the sample's fallback URL) for LSP features. |
+| `npm start -w packages/devsense-php-editor-sampleweb` | Production server (after `npm run build`). It serves `dist` and the WebSocket `/lsp` on one port (`PORT`, default 8080), plus `/healthz`. |
 
 The sample finds the WebSocket URL in this order: `window.PHP_EDITOR_WS_URL`, the `/php-editor-port` file served by Vite,
-`<meta name="php-editor-ws-url">`, then `ws://127.0.0.1:8765`.
+`<meta name="php-editor-ws-url">`, then the same origin (`wss://<host>/lsp` on HTTPS, `ws://<host>/lsp` on HTTP), as served by `npm start`.
 
 For the Playwright tests the demo exposes `window.phpEditor` (the component instance) and `window.monaco`
 (`phpEditor.monaco`).
@@ -390,6 +392,17 @@ npm run test:unit                   # library unit tests (node:test): licence wi
 `npm test` runs the Playwright suite (`packages/devsense-php-editor-sampleweb/tests`, Chromium, headless). Its
 `webServer` builds the library and starts PhpEditor + Vite on port 5173 automatically. A single spec:
 `npx playwright test tests/hover.spec.ts` from the sample folder. Artifacts go to `test-results/` and are git-ignored.
+
+
+## Deployment
+
+To run the sample on a server, use `npm run build` and then `npm start` in `packages/devsense-php-editor-sampleweb`.
+This starts one process on `$PORT` that serves the static build, the WebSocket at `/lsp` and `/healthz`. The
+[`Dockerfile`](Dockerfile) packages it as a container. See [DEPLOYMENT.md](DEPLOYMENT.md) for Azure options, costs and
+step-by-step `az` commands.
+
+To embed the WebSocket in your own HTTP server, pass `new PhpEditor({ server, path: '/lsp' })`. The `server`
+option takes an existing `http`/`https` server; that server then owns the port, and `port`/`host` are ignored.
 
 ## Rename and `file:` shadow documents
 
