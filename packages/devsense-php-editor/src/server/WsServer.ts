@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
+import type { JsonRpcMessage } from '../lsp/client';
 
 export interface WsServerOptions {
   port?: number;
@@ -13,7 +14,8 @@ export interface WsClient {
 
 export interface WsServerEvents {
   connection: (client: WsClient) => void;
-  message: (client: WsClient, data: any) => void;
+  /** Parsed JSON (not yet validated as JSON-RPC), or `{ raw }` for non-JSON frames. */
+  message: (client: WsClient, data: unknown) => void;
   disconnect: (clientId: string) => void;
   error: (err: Error) => void;
 }
@@ -61,10 +63,11 @@ export class WsServer extends EventEmitter {
         console.log('[WsServer] Client connected:', id, '(total:', this.clients.size + ')');
 
         socket.on('message', (raw: Buffer | string) => {
-          let data: any;
+          let data: unknown;
           try {
             data = JSON.parse(raw.toString('utf8'));
-            console.log('[WsServer] <- Client', id, ':', data.method || data.id || 'response');
+            const m = data as JsonRpcMessage | null;
+            console.log('[WsServer] <- Client', id, ':', m?.method || m?.id || 'response');
           } catch {
             data = { raw: raw.toString('utf8') };
             console.log('[WsServer] <- Client', id, ': <non-JSON>');
@@ -105,7 +108,7 @@ export class WsServer extends EventEmitter {
   }
 
   /** Send a JSON-serializable message to a specific client by id. */
-  sendTo(clientId: string, message: any): boolean {
+  sendTo(clientId: string, message: JsonRpcMessage): boolean {
     const client = this.clients.get(clientId);
     if (!client || client.socket.readyState !== WebSocket.OPEN) return false;
     client.socket.send(JSON.stringify(message));
@@ -113,7 +116,7 @@ export class WsServer extends EventEmitter {
   }
 
   /** Broadcast a message to all connected clients. */
-  broadcast(message: any): void {
+  broadcast(message: JsonRpcMessage): void {
     const payload = JSON.stringify(message);
     for (const client of this.clients.values()) {
       if (client.socket.readyState === WebSocket.OPEN) {

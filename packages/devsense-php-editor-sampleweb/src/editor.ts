@@ -7,6 +7,9 @@
 import { WsClient } from './ws-client';
 import { DiagnosticsPanel } from './diagnostics';
 import { ThemeManager } from './theme';
+import type * as monacoNs from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import type { JsonRpcMessage, MonacoApi } from './types';
 
 // Browser-safe LSP providers (generated bundle: devsense-php-editor/browser).
 // These forward LSP requests through the WebSocket to devsense-php-ls.
@@ -32,20 +35,20 @@ export interface EditorOptions {
   wsUrl: string;
   containerId: string;
   initialContent?: string;
-  monaco: any;
+  monaco: MonacoApi;
 }
 
 export class PhpEditorUI {
   private ws: WsClient;
-  private editor: any = null;
-  private model: any = null;
+  private editor: monacoNs.editor.IStandaloneCodeEditor | null = null;
+  private model: monacoNs.editor.ITextModel | null = null;
   private diagnostics: DiagnosticsPanel;
   private theme: ThemeManager;
   private providers: Array<{ dispose(): void }> = [];
   private virtualDocUri: string = '';
   /** Server-assigned workspace URI, e.g. `untitled-workspace-client-1://`. Empty until the WS hello arrives. */
   private workspaceUri: string = '';
-  private readonly monaco: any;
+  private readonly monaco: MonacoApi;
   private wsConnected = false;
   private readonly initialContent: string;
 
@@ -112,7 +115,7 @@ export class PhpEditorUI {
     await this.performInitialize();
     this.registerProviders();
 
-    this.editor.onDidChangeModelContent((e: any) => {
+    this.editor.onDidChangeModelContent(() => {
       console.log('[editor] Model content changed');
       if (this.wsConnected && this.virtualDocUri) {
         this.ws.sendNotification('textDocument/didChange', {
@@ -136,9 +139,10 @@ export class PhpEditorUI {
   /** Create the virtual document model under the server-assigned workspace URI. */
   private createModel(content: string): void {
     const uri = this.workspaceUri ? `${this.workspaceUri}untitled.php` : 'untitled-workspace-client://untitled.php';
-    this.model = this.monaco.editor.createModel(content, 'php', this.monaco.Uri.parse(uri));
-    this.editor.setModel(this.model);
-    this.virtualDocUri = this.model.uri.toString();
+    const model = this.monaco.editor.createModel(content, 'php', this.monaco.Uri.parse(uri));
+    this.model = model;
+    this.editor?.setModel(model);
+    this.virtualDocUri = model.uri.toString();
     console.log('[editor] Model created:', this.virtualDocUri);
   }
 
@@ -193,8 +197,7 @@ export class PhpEditorUI {
 
   private registerProviders(): void {
     const selector = { language: 'php' };
-    const ws = this.ws as any;
-    const lang = this.monaco.languages;
+    const ws = this.ws;
 
     const providers = [
       new CompletionProvider(ws, { selector, languageId: 'php', monaco: this.monaco }),
@@ -221,13 +224,13 @@ export class PhpEditorUI {
     console.log('[editor]', providers.length, 'providers registered');
   }
 
-  private handleServerMessage(message: any): void {
+  private handleServerMessage(message: JsonRpcMessage): void {
     const method = message.method;
-    const params = message.params || {};
 
     // Server hello: tells this client its assigned workspace URI so the
     // virtual document URI matches the server's per-client scheme.
     if (method === 'client/workspace') {
+      const params = (message.params ?? {}) as { workspaceUri?: string };
       this.workspaceUri = params.workspaceUri ?? '';
       if (this.workspaceUri) {
         console.log('[editor] Assigned workspace URI:', this.workspaceUri);
@@ -242,9 +245,10 @@ export class PhpEditorUI {
     }
 
     if (method === 'textDocument/publishDiagnostics') {
-      const uri = params.uri; // LSP PublishDiagnosticsParams.uri
+      const params = message.params as lsp.PublishDiagnosticsParams;
+      const uri = params?.uri;
       if (uri && uri === this.virtualDocUri) {
-        const markers = (params.diagnostics || []).map((d: any) => ({
+        const markers = (params.diagnostics || []).map((d) => ({
           uri,
           message: d.message,
           severity: d.severity ?? 1,
@@ -253,18 +257,21 @@ export class PhpEditorUI {
           endLineNumber: (d.range?.end?.line ?? 0) + 1,
           endColumn: (d.range?.end?.character ?? 0) + 1,
           source: d.source,
-          code: d.code,
+          code: d.code !== undefined ? String(d.code) : undefined,
         }));
         this.diagnostics.setDiagnostics(uri, markers);
 
         if (this.model) {
-          this.monaco.editor.setModelMarkers(this.model, 'devsense-php-ls', markers.map((m: any) => ({
+          // LSP severity (Error=1..Hint=4) -> Monaco MarkerSeverity (Error=8, Warning=4, Info=2, Hint=1).
+          const S = this.monaco.MarkerSeverity;
+          const toMonacoSeverity = (s: number) => (s === 1 ? S.Error : s === 2 ? S.Warning : s === 3 ? S.Info : S.Hint);
+          this.monaco.editor.setModelMarkers(this.model, 'devsense-php-ls', markers.map((m): monacoNs.editor.IMarkerData => ({
             startLineNumber: m.startLineNumber,
             startColumn: m.startColumn,
             endLineNumber: m.endLineNumber,
             endColumn: m.endColumn,
             message: m.message,
-            severity: m.severity,
+            severity: toMonacoSeverity(m.severity),
             source: m.source,
             code: m.code,
           })));
@@ -273,6 +280,7 @@ export class PhpEditorUI {
     }
 
     if (method === 'window/showMessage') {
+      const params = message.params as lsp.ShowMessageParams;
       console.log('[LS]', params.type, params.message);
     }
   }

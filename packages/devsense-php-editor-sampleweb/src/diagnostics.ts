@@ -62,7 +62,7 @@ export class DiagnosticsPanel {
   }
 
   /** Replace all diagnostics for a given URI. */
-  setDiagnostics(uri: string, markers: IMarkerData[]): void {
+  setDiagnostics(uri: string, markers: DiagnosticMarker[]): void {
     const list: DiagnosticMarker[] = markers.map((m) => ({
       uri,
       message: m.message,

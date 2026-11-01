@@ -13,7 +13,7 @@ export interface PhpEditorOptions {
   /** License key or JSON offline code. Falls back to DEVSENSE_PHP_LS_LICENSE env. */
   licenseKey?: string;
   /** Extra initializationOptions passed to the LS `initialize` request. */
-  initializationOptions?: Record<string, any>;
+  initializationOptions?: Record<string, unknown>;
   /** Working directory for the LS process. */
   cwd?: string;
   /** Additional environment variables for the LS process. */
@@ -92,7 +92,7 @@ export class PhpEditor {
 
     // 3. Wire up the router between WS clients and the LS.
     const licenseKey = this.options.licenseKey ?? process.env.DEVSENSE_PHP_LS_LICENSE;
-    const initializationOptions: Record<string, any> = {};
+    const initializationOptions: Record<string, unknown> = {};
     if (licenseKey) {
       initializationOptions['0'] = licenseKey;
       console.log('[PhpEditor] License key provided via initializationOptions');
@@ -108,6 +108,8 @@ export class PhpEditor {
     // Write port to file for client discovery if configured.
     if (this.options.portFile) {
       const fs = require('fs');
+      const path = require('path');
+      fs.mkdirSync(path.dirname(this.options.portFile), { recursive: true });
       fs.writeFileSync(this.options.portFile, String(port));
       console.log('[PhpEditor] WS port written to', this.options.portFile);
     }

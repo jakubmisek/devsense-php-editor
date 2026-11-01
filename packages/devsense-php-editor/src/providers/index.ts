@@ -9,7 +9,7 @@
  * and forwards requests through the shared Router to devsense-php-ls.
  */
 export { BaseProvider } from './base';
-export type { MonacoLanguageApi } from './base';
+export type { MonacoLanguageApi, MonacoApi, LspRequestSender, BaseProviderOptions } from './base';
 
 export { CompletionProvider } from './CompletionProvider';
 export type { CompletionProviderOptions } from './CompletionProvider';

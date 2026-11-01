@@ -1,42 +1,36 @@
 /**
- * ReferencesProvider — maps Monaco ReferenceProvider to devsense-php-ls
- * LSP request textDocument/references.
+ * ReferencesProvider — maps Monaco ReferenceProvider to devsense-php-ls LSP request textDocument/references.
  */
-import { BaseProvider } from './base';
-import { MonacoLanguageApi } from './base';
+import type * as monaco from 'monaco-editor';
+import type * as lsp from 'vscode-languageserver-protocol';
+import { BaseProvider, BaseProviderOptions, LspRequestSender, MonacoApi } from './base';
 
-export interface ReferencesProviderOptions {
-  selector: any;
-  languageId: string;
-  monaco: any;
-}
+export type ReferencesProviderOptions = BaseProviderOptions;
 
 export class ReferencesProvider extends BaseProvider {
-  constructor(router: any, options: ReferencesProviderOptions) {
+  constructor(router: LspRequestSender, options: ReferencesProviderOptions) {
     super(router, options.languageId, options.selector, options.monaco);
   }
 
-  register(monaco: MonacoLanguageApi): void {
-    const provider = {
-      provideReferences: async (model: any, position: Position, context: any, token: CancellationToken): Promise<ProviderResult<Location[]>> => {
-        const params = {
-          textDocument: { uri: model.uri.toString() },
+  register(monacoApi: MonacoApi): void {
+    const provider: monaco.languages.ReferenceProvider = {
+      provideReferences: async (model, position, context, _token) => {
+        const params: lsp.ReferenceParams = {
+          textDocument: this.toTextDocument(model),
           position: this.toLspPosition(position),
           context: { includeDeclaration: context.includeDeclaration ?? true },
         };
         console.log('[ReferencesProvider] Sending textDocument/references for', params.textDocument.uri);
         try {
-          const result = await this.router.sendRequest('textDocument/references', params);
+          const result = await this.request<lsp.Location[]>('textDocument/references', params);
           console.log('[ReferencesProvider] Got references result:', result?.length ?? 0, 'locations');
-          if (!result || !Array.isArray(result)) return null;
-          return result.map((loc: any) => this.fromLspLocation(loc));
+          return result ? result.map((loc) => this.fromLspLocation(loc)) : null;
         } catch (err) {
           console.error('ReferencesProvider error:', err);
           return null;
         }
       },
     };
-    const disp = monaco.languages.registerReferenceProvider(this.selector, provider);
-    this.disposables.push(disp);
+    this.disposables.push(monacoApi.languages.registerReferenceProvider(this.selector, provider));
   }
 }
