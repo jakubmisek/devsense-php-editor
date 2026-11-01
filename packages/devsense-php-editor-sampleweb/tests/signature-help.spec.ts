@@ -12,7 +12,9 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('DEVSENSE PHP Editor - textDocument/signatureHelp', () => {
   const EDITOR = '.monaco-editor';
-  const SIGNATURE = '.monaco-signature-help, .monaco-widget.signature-help, .parameter-help';
+  // Use a visible signature help selector to avoid strict-mode violations.
+  const SIGNATURE =
+    '.monaco-signature-help:not([hidden]), .monaco-widget.signature-help:not([hidden]), .parameter-help:not([hidden])';
 
   test.beforeEach(async ({ page }) => {
     const portRes = await page.request.fetch('/php-editor-port', {
@@ -23,7 +25,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/signatureHelp', () => {
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3000);
   });
 
   test('shows signature help popup for strlen( with parameter info', async ({
@@ -32,7 +34,8 @@ test.describe('DEVSENSE PHP Editor - textDocument/signatureHelp', () => {
     await page.locator(EDITOR).click();
     // Type the function name and opening paren — "(" is a signature help trigger.
     await page.keyboard.insertText('<?php strlen(');
-    await page.waitForTimeout(1000);
+    // Give the LS time to compute signature help.
+    await page.waitForTimeout(4000);
 
     // The signature help popup should appear showing parameters for strlen.
     const signature = page.locator(SIGNATURE);

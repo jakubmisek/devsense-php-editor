@@ -25,12 +25,12 @@
             - generic [ref=e33]: <?php
             - generic [ref=e35]: echo "missing semicolon"
             - generic [ref=e37]: echo "another line"
-  - generic [ref=e48] [cursor=pointer]:
-    - generic [ref=e49]:
+  - generic [ref=e49] [cursor=pointer]:
+    - generic [ref=e50]:
       - text: Diagnostics
-      - generic [ref=e50]: "0"
-    - button "▾" [ref=e51]
-  - generic [ref=e52]:
+      - generic [ref=e51]: "0"
+    - button "▾" [ref=e52]
+  - generic [ref=e53]:
     - alert
     - alert
 ```

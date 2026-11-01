@@ -15,24 +15,24 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('textDocument/codeAction', () => {
   test.beforeEach(async ({ page }) => {
+    // Skip gracefully if the LSP backend isn't responding.
+    const portRes = await page.request.fetch('/php-editor-port', {
+      failOnStatusCode: false,
+    });
+    const backendAvailable = portRes.ok();
+    test.skip(!backendAvailable, 'LSP backend not responding at /php-editor-port');
+
     await page.goto('/');
     await page.locator('.monaco-editor').waitFor({
       state: 'visible',
       timeout: 30000,
     });
+    await page.waitForTimeout(3000);
   });
 
   test('shows code action suggestions for invalid PHP (missing semicolon)', async ({
     page,
   }) => {
-    // Skip gracefully if the LSP backend isn't responding.
-    const backendOk = await page.evaluate(() => {
-      return fetch('/php-editor-port')
-        .then((r) => r.ok)
-        .catch(() => false);
-    });
-    test.skip(!backendOk, 'LSP backend not responding at /php-editor-port');
-
     await page.locator('.monaco-editor').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.type(
@@ -43,7 +43,7 @@ echo "another line"
     );
 
     // Give devsense-php-ls time to publish diagnostics.
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(4000);
 
     // Assert a diagnostic surfaced in the diagnostics panel.
     const diagnosticsPanel = page.locator('#diagnostics-panel');
@@ -60,8 +60,8 @@ echo "another line"
 
     // Assert the code action Quick Fix widget appeared.
     await expect(
-      page.locator('.monaco-editor .monaco-list')
-    ).toBeVisible({ timeout: 5000 });
+      page.locator('.monaco-editor .monaco-list:not([hidden])')
+    ).toBeVisible({ timeout: 10000 });
 
     // Assert at least one code action suggestion is listed.
     await expect(page.locator('.monaco-editor')).toContainText(

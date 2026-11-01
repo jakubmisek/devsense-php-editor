@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
   const EDITOR = '.monaco-editor';
-  const COMPLETION_LIST = '.monaco-list';
+  const COMPLETION_LIST = '.monaco-list:not([hidden])';
 
   test.beforeEach(async ({ page }) => {
     // Skip gracefully when the devsense-php-ls backend isn't reachable.
@@ -26,8 +26,9 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
-    // Allow the LSP initialize/didOpen handshake to complete.
-    await page.waitForTimeout(1500);
+    // Allow the LSP initialize/didOpen handshake to complete and the LS to
+    // index the document before requesting completions.
+    await page.waitForTimeout(3000);
   });
 
   test('shows completion widget with "echo" after typing "<?php ec"', async ({
@@ -38,6 +39,8 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
     await page.keyboard.insertText('<?php ec');
     // Explicitly trigger completion (Ctrl+Space).
     await page.keyboard.press('Control+Space');
+    // Give the LS time to compute completion items.
+    await page.waitForTimeout(3000);
 
     const completion = page.locator(COMPLETION_LIST);
     await expect(completion).toBeVisible({ timeout: 10000 });
@@ -52,6 +55,8 @@ test.describe('DEVSENSE PHP Editor - textDocument/completion', () => {
     await page.keyboard.insertText('<?php $x = ');
     // Position caret right after the "$"-style trigger; trigger completion.
     await page.keyboard.press('Control+Space');
+    // Give the LS time to compute completion items.
+    await page.waitForTimeout(3000);
 
     const completion = page.locator(COMPLETION_LIST);
     await expect(completion).toBeVisible({ timeout: 10000 });

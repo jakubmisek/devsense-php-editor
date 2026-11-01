@@ -16,22 +16,22 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('textDocument/rangeFormatting', () => {
   test.beforeEach(async ({ page }) => {
+    // Skip gracefully if the LSP backend isn't responding.
+    const portRes = await page.request.fetch('/php-editor-port', {
+      failOnStatusCode: false,
+    });
+    const backendAvailable = portRes.ok();
+    test.skip(!backendAvailable, 'LSP backend not responding at /php-editor-port');
+
     await page.goto('/');
     await page.locator('.monaco-editor').waitFor({
       state: 'visible',
       timeout: 30000,
     });
+    await page.waitForTimeout(3000);
   });
 
   test('formats only the selected range of PHP code', async ({ page }) => {
-    // Skip gracefully if the LSP backend isn't responding.
-    const backendOk = await page.evaluate(() => {
-      return fetch('/php-editor-port')
-        .then((r) => r.ok)
-        .catch(() => false);
-    });
-    test.skip(!backendOk, 'LSP backend not responding at /php-editor-port');
-
     await page.locator('.monaco-editor').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.type(
@@ -48,7 +48,6 @@ echo "unchanged";
     });
 
     // Select the first line (the unformatted function) by triple-clicking it.
-    // The editor content starts at line 1; triple-click selects the whole line.
     await page.locator('.monaco-editor').click({ position: { x: 50, y: 60 } });
     await page.mouse.down({ button: 'left' });
     await page.mouse.up({ button: 'left' });
@@ -56,14 +55,15 @@ echo "unchanged";
     await page.mouse.up({ button: 'left' });
     await page.mouse.down({ button: 'left' });
     await page.mouse.up({ button: 'left' });
+    await page.waitForTimeout(1000);
 
     // Format the selected range (Ctrl+K Ctrl+F is the default range format binding;
     // Monaco also binds Shift+Alt+F to format selection when a selection exists).
     await page.keyboard.press('Control+K');
     await page.keyboard.press('F');
 
-    // Give devsense-php-ls time to compute range formatting edits.
-    await page.waitForTimeout(1500);
+    // Give devsense-php-ls more time to compute range formatting edits.
+    await page.waitForTimeout(4000);
 
     // Capture content after range formatting.
     const afterContent = await page.evaluate(() => {

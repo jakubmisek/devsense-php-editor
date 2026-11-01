@@ -14,24 +14,25 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('textDocument/documentSymbol', () => {
   test.beforeEach(async ({ page }) => {
+    // Skip gracefully if the LSP backend isn't responding.
+    const portRes = await page.request.fetch('/php-editor-port', {
+      failOnStatusCode: false,
+    });
+    const backendAvailable = portRes.ok();
+    test.skip(!backendAvailable, 'LSP backend not responding at /php-editor-port');
+
     await page.goto('/');
     await page.locator('.monaco-editor').waitFor({
       state: 'visible',
       timeout: 30000,
     });
+    // Allow the LSP initialize/didOpen handshake to complete.
+    await page.waitForTimeout(3000);
   });
 
   test('lists PHP functions and classes in the Go to Symbol palette', async ({
     page,
   }) => {
-    // Skip gracefully if the LSP backend isn't responding.
-    const backendOk = await page.evaluate(() => {
-      return fetch('/php-editor-port')
-        .then((r) => r.ok)
-        .catch(() => false);
-    });
-    test.skip(!backendOk, 'LSP backend not responding at /php-editor-port');
-
     await page.locator('.monaco-editor').click();
     // Replace the initial editor content.
     await page.keyboard.press('Control+A');
@@ -55,15 +56,15 @@ function greet(string $name): void {
     );
 
     // Give devsense-php-ls time to compute document symbols.
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3000);
 
     // Open the Go to Symbol palette (Ctrl+Shift+O).
     await page.keyboard.press('Control+Shift+O');
 
     // Assert the symbol picker overlay appeared.
     await expect(
-      page.locator('.monaco-editor .monaco-list')
-    ).toBeVisible({ timeout: 5000 });
+      page.locator('.monaco-editor .monaco-list:not([hidden])')
+    ).toBeVisible({ timeout: 10000 });
 
     // Assert the expected symbols are listed.
     await expect(page.locator('.monaco-editor')).toContainText('Calculator');

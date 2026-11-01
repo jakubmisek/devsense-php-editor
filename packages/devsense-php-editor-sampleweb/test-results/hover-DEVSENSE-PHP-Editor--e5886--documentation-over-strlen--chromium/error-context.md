@@ -31,12 +31,12 @@
             - generic [ref=e46]: echo strlen($x);
             - generic [ref=e48]: "}"
             - generic [ref=e50]: <?php echo strlen("hello");
-  - generic [ref=e60] [cursor=pointer]:
-    - generic [ref=e61]:
+  - generic [ref=e61] [cursor=pointer]:
+    - generic [ref=e62]:
       - text: Diagnostics
-      - generic [ref=e62]: "0"
-    - button "▾" [ref=e63]
-  - generic [ref=e64]:
+      - generic [ref=e63]: "0"
+    - button "▾" [ref=e64]
+  - generic [ref=e65]:
     - alert
     - alert
 ```

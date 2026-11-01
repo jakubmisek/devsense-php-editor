@@ -60,12 +60,12 @@
             - generic [ref=e181]: echo "Hello, " . $name;
             - generic [ref=e183]: "}"
             - generic [ref=e187]: "}"
-  - generic [ref=e197] [cursor=pointer]:
-    - generic [ref=e198]:
+  - generic [ref=e198] [cursor=pointer]:
+    - generic [ref=e199]:
       - text: Diagnostics
-      - generic [ref=e199]: "0"
-    - button "▾" [ref=e200]
-  - generic [ref=e201]:
+      - generic [ref=e200]: "0"
+    - button "▾" [ref=e201]
+  - generic [ref=e202]:
     - alert
     - alert
 ```

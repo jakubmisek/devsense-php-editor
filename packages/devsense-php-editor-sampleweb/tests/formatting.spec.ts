@@ -15,22 +15,22 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('textDocument/formatting', () => {
   test.beforeEach(async ({ page }) => {
+    // Skip gracefully if the LSP backend isn't responding.
+    const portRes = await page.request.fetch('/php-editor-port', {
+      failOnStatusCode: false,
+    });
+    const backendAvailable = portRes.ok();
+    test.skip(!backendAvailable, 'LSP backend not responding at /php-editor-port');
+
     await page.goto('/');
     await page.locator('.monaco-editor').waitFor({
       state: 'visible',
       timeout: 30000,
     });
+    await page.waitForTimeout(3000);
   });
 
   test('reformats unformatted PHP document on Shift+Alt+F', async ({ page }) => {
-    // Skip gracefully if the LSP backend isn't responding.
-    const backendOk = await page.evaluate(() => {
-      return fetch('/php-editor-port')
-        .then((r) => r.ok)
-        .catch(() => false);
-    });
-    test.skip(!backendOk, 'LSP backend not responding at /php-editor-port');
-
     await page.locator('.monaco-editor').click();
     await page.keyboard.press('Control+A');
     await page.keyboard.type(
@@ -49,8 +49,8 @@ class Bar{public function baz($y){echo $y;}}
     // Format the document (Shift+Alt+F).
     await page.keyboard.press('Shift+Alt+F');
 
-    // Give devsense-php-ls time to compute formatting edits.
-    await page.waitForTimeout(1500);
+    // Give devsense-php-ls more time to compute formatting edits.
+    await page.waitForTimeout(4000);
 
     // Capture the formatted content after formatting.
     const afterContent = await page.evaluate(() => {

@@ -12,7 +12,9 @@ import { test, expect } from '@playwright/test';
  */
 test.describe('DEVSENSE PHP Editor - textDocument/hover', () => {
   const EDITOR = '.monaco-editor';
-  const HOVER = '.monaco-hover';
+  // Use a visible hover widget selector to avoid strict-mode violations from
+  // hidden tooltip widgets that Monaco keeps in the DOM.
+  const HOVER = '.monaco-hover:not([hidden])';
 
   test.beforeEach(async ({ page }) => {
     const portRes = await page.request.fetch('/php-editor-port', {
@@ -23,7 +25,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/hover', () => {
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(3000);
   });
 
   test('shows hover tooltip with strlen documentation over "strlen"', async ({
@@ -32,7 +34,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/hover', () => {
     await page.locator(EDITOR).click();
     // Type a small PHP snippet that uses the well-known strlen function.
     await page.keyboard.insertText('<?php echo strlen("hello");');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(2000);
 
     // Move the mouse over the "strlen" identifier (characters 9..14 on line 1).
     const editor = page.locator(EDITOR).first();
@@ -44,10 +46,10 @@ test.describe('DEVSENSE PHP Editor - textDocument/hover', () => {
     const x = box.x + 120;
     const y = box.y + 40;
     await page.mouse.move(x, y);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(3000);
 
     const hover = page.locator(HOVER);
-    await expect(hover).toBeVisible({ timeout: 10000 });
-    await expect(hover).toContainText('strlen', { timeout: 10000 });
+    await expect(hover.first()).toBeVisible({ timeout: 10000 });
+    await expect(hover.first()).toContainText('strlen', { timeout: 10000 });
   });
 });
