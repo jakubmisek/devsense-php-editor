@@ -20,3 +20,9 @@ yarn-error.log*
 .idea/
 .vscode/
 *.code-workspace
+
+# Playwright artifacts
+test-results/
+playwright-report/
+# Runtime port file written by PhpEditor
+packages/devsense-php-editor-sampleweb/public/php-editor-port

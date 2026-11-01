@@ -61,9 +61,13 @@ test.describe('DEVSENSE PHP Editor Playground', () => {
   });
 
   test('bottom diagnostics panel shows errors when PHP has syntax errors', async ({ page }) => {
-    // This test requires the WS server to be running and diagnostics pushed.
-    // It verifies the diagnostics panel renders when diagnostics arrive.
+    // devsense-php-ls pushes diagnostics lazily (1-3 s after the last edit).
+    await page.waitForFunction(() => (window as any).monaco?.editor?.getEditors?.().length > 0);
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => (window as any).monaco.editor.getEditors()[0].getModel().setValue('<?php\n$q = = ;\n'));
     const panel = page.locator('#diagnostics-panel');
     await expect(panel).toBeVisible();
+    await expect(page.locator('.diagnostics-header .count')).not.toHaveText('0', { timeout: 10000 });
+    await expect(panel).toContainText(/syntax error/i);
   });
 });

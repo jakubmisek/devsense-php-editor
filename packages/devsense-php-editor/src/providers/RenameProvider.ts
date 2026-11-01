@@ -28,7 +28,7 @@ export class RenameProvider extends BaseProvider {
         try {
           const result = await this.router.sendRequest('textDocument/rename', params);
           console.log('[RenameProvider] Got rename result:', !!result);
-          return result;
+          return this.toMonacoWorkspaceEdit(result) ?? null;
         } catch (err) {
           console.error('RenameProvider error:', err);
           return null;

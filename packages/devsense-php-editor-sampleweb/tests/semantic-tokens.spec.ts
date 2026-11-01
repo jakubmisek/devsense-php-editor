@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
  * the WebSocket RPC router (SemanticTokensProvider in providers.browser.js).
  *
  * Each test is self-contained: it navigates to /, waits for the Monaco editor
- * to render, and skips gracefully if the PHP language server backend isn't
+ * to render, and fails if the PHP language server backend isn't
  * responding (port file unreachable).
  */
 test.describe('DEVSENSE PHP Editor - textDocument/semanticTokens/full', () => {
@@ -19,10 +19,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/semanticTokens/full', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(
-      !backendAvailable,
-      'devsense-php-ls backend not responding (no /php-editor-port)'
-    );
+    expect(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)').toBe(false);
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
@@ -49,7 +46,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/semanticTokens/full', () => {
     // token-decoration classes (e.g. .mtk1, .mtk2, ...) inside .monaco-editor.
     const tokenSpans = page.locator('.monaco-editor span[class*="mtk"]');
     const tokenCount = await tokenSpans.count();
-    test.skip(tokenCount === 0, 'no semantic token spans rendered (backend may not have returned tokens)');
+    expect(tokenCount === 0, 'no semantic token spans rendered (backend may not have returned tokens)').toBe(false);
     await expect(tokenSpans.first()).toBeVisible();
   });
 });

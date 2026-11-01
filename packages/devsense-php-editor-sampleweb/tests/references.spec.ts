@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
  * these tests assert the feature is wired (widget appears / no error) rather
  * than the exact reference list.
  *
- * Each test is self-contained and skips gracefully if the PHP language server
+ * Each test is self-contained and fails if the PHP language server
  * backend isn't responding (port file unreachable).
  */
 test.describe('DEVSENSE PHP Editor - textDocument/references', () => {
@@ -22,7 +22,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/references', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)');
+    expect(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)').toBe(false);
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
@@ -42,7 +42,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/references', () => {
     // Place caret on the "$count" declaration (line 1) and trigger find refs.
     const editor = page.locator(EDITOR).first();
     const box = await editor.boundingBox();
-    test.skip(!box, 'editor bounding box not available');
+    expect(!box, 'editor bounding box not available').toBe(false);
     await page.mouse.click(box.x + 80, box.y + 30);
     await page.waitForTimeout(300);
     await page.keyboard.press('Shift+F12');

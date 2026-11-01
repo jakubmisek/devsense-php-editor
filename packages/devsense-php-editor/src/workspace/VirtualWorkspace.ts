@@ -42,6 +42,6 @@ export class VirtualWorkspace {
   /** Extract the document name from a workspace URI, e.g. `untitled.php`. */
   documentName(uri: string): string | null {
     if (!this.owns(uri)) return null;
-    return uri.slice(this.rootUri.length) || undefined;
+    return uri.slice(this.rootUri.length) || null;
   }
 }

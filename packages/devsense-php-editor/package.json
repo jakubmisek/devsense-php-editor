@@ -35,5 +35,17 @@
     "devsense",
     "editor",
     "websocket"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": "./dist-browser/providers.browser.js"
+  },
+  "files": [
+    "dist",
+    "dist-browser",
+    "README.md"
   ]
 }

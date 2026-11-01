@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
  * editor backed by devsense-php-ls over WebSocket RPC.
  *
  * Note: devsense-php-ls does not return codeAction results for sandboxed
- * untitled-workspace-{id}:// documents. This test is expected to be skipped
+ * untitled-workspace-{id}:// documents. This test previously skipped
  * until the server supports code actions for virtual workspace documents.
  */
 test.describe('textDocument/codeAction', () => {
@@ -17,7 +17,7 @@ test.describe('textDocument/codeAction', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(!backendAvailable, 'LSP backend not responding at /php-editor-port');
+    expect(!backendAvailable, 'LSP backend not responding at /php-editor-port').toBe(false);
 
     await page.goto('/');
     await page.locator('.monaco-editor').waitFor({
@@ -39,16 +39,13 @@ echo "another line"
 `
     );
 
-    // Give devsense-php-ls time to publish diagnostics.
-    await page.waitForTimeout(1500);
+    // devsense-php-ls pushes diagnostics lazily, 1-3 s after typing stops.
 
     // Assert a diagnostic surfaced in the diagnostics panel.
     const diagnosticsPanel = page.locator('#diagnostics-panel');
     await expect(diagnosticsPanel).toBeVisible();
 
-    // Diagnostics may not appear for sandboxed URIs — skip if count stays 0.
-    const countText = await page.locator('.diagnostics-header .count').textContent();
-    test.skip(countText === '0', 'no diagnostics pushed for sandboxed URI (server-side limitation)');
+    await expect(page.locator('.diagnostics-header .count')).not.toHaveText('0', { timeout: 10000 });
 
     // Click into the editor at the error line so code actions are scoped there.
     await page.locator('.monaco-editor').click({ position: { x: 100, y: 100 } });

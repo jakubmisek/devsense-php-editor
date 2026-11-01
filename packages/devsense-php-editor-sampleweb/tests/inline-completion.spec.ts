@@ -22,7 +22,7 @@ test.describe('textDocument/inlineCompletion', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(!backendAvailable, 'LSP backend not responding at /php-editor-port');
+    expect(!backendAvailable, 'LSP backend not responding at /php-editor-port').toBe(false);
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
@@ -36,7 +36,7 @@ test.describe('textDocument/inlineCompletion', () => {
     await page.locator(EDITOR).click();
     await page.keyboard.press('Control+A');
     // Type a partial PHP construct that should trigger inline completion.
-    await page.keyboard.insertText('<?php ec');
+    await page.keyboard.type('<?php ec');
 
     // Inline completion is automatic (triggered on typing); wait for ghost text.
     await page.waitForTimeout(4000);

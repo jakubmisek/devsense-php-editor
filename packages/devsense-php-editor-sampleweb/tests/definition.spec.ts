@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
  * fragile, these tests assert that the feature is wired (no error, provider
  * responds) rather than the exact target line.
  *
- * Each test is self-contained and skips gracefully if the PHP language server
+ * Each test is self-contained and fails if the PHP language server
  * backend isn't responding (port file unreachable).
  */
 test.describe('DEVSENSE PHP Editor - textDocument/definition', () => {
@@ -21,7 +21,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/definition', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)');
+    expect(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)').toBe(false);
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
@@ -42,7 +42,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/definition', () => {
     // Position roughly over the second occurrence of "greet" on line 2.
     const editor = page.locator(EDITOR).first();
     const box = await editor.boundingBox();
-    test.skip(!box, 'editor bounding box not available');
+    expect(!box, 'editor bounding box not available').toBe(false);
     await page.mouse.click(box.x + 260, box.y + 60);
     await page.waitForTimeout(300);
     await page.keyboard.press('F12');
@@ -64,7 +64,7 @@ test.describe('DEVSENSE PHP Editor - textDocument/definition', () => {
 
     const editor = page.locator(EDITOR).first();
     const box = await editor.boundingBox();
-    test.skip(!box, 'editor bounding box not available');
+    expect(!box, 'editor bounding box not available').toBe(false);
     // Ctrl+Click over the "add" call on line 2.
     await page.keyboard.down('Control');
     await page.mouse.click(box.x + 250, box.y + 60);

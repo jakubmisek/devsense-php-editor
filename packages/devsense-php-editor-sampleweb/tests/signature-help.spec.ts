@@ -7,21 +7,20 @@ import { test, expect } from '@playwright/test';
  * WebSocket RPC router (SignatureHelpProvider, trigger characters "(", ",", "<").
  *
  * Each test is self-contained: it navigates to /, waits for the Monaco editor
- * to render, and skips gracefully if the PHP language server backend isn't
+ * to render, and fails if the PHP language server backend isn't
  * responding (port file unreachable).
  */
 test.describe('DEVSENSE PHP Editor - textDocument/signatureHelp', () => {
   const EDITOR = '.monaco-editor';
   // Use a visible signature help selector to avoid strict-mode violations.
-  const SIGNATURE =
-    '.monaco-signature-help:not([hidden]), .monaco-widget.signature-help:not([hidden]), .parameter-help:not([hidden])';
+  const SIGNATURE = '.parameter-hints-widget.visible';
 
   test.beforeEach(async ({ page }) => {
     const portRes = await page.request.fetch('/php-editor-port', {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)');
+    expect(!backendAvailable, 'devsense-php-ls backend not responding (no /php-editor-port)').toBe(false);
 
     await page.goto('/');
     await page.locator(EDITOR).waitFor({ state: 'visible', timeout: 30000 });
@@ -33,7 +32,15 @@ test.describe('DEVSENSE PHP Editor - textDocument/signatureHelp', () => {
   }) => {
     await page.locator(EDITOR).click();
     // Type the function name and opening paren — "(" is a signature help trigger.
-    await page.keyboard.insertText('<?php strlen(');
+    // insertText() does not fire trigger characters; type "(" as a real keystroke.
+    await page.evaluate(() => {
+      const ed = (window as any).monaco.editor.getEditors()[0];
+      ed.getModel().setValue('<?php\nstrlen');
+      ed.setPosition({ lineNumber: 2, column: 7 });
+      ed.focus();
+    });
+    await page.waitForTimeout(1000);
+    await page.keyboard.type('(');
     // Give the LS time to compute signature help.
     await page.waitForTimeout(4000);
 

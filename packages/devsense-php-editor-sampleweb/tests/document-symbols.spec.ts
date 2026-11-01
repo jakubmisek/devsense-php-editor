@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
  *
  * Note: document symbols may not be returned for sandboxed
  * untitled-workspace-{id}:// documents. If the palette doesn't appear, the
- * test is skipped gracefully.
+ * test fails.
  */
 test.describe('textDocument/documentSymbol', () => {
   test.beforeEach(async ({ page }) => {
@@ -23,7 +23,7 @@ test.describe('textDocument/documentSymbol', () => {
       failOnStatusCode: false,
     });
     const backendAvailable = portRes.ok();
-    test.skip(!backendAvailable, 'LSP backend not responding at /php-editor-port');
+    expect(!backendAvailable, 'LSP backend not responding at /php-editor-port').toBe(false);
 
     await page.goto('/');
     await page.locator('.monaco-editor').waitFor({

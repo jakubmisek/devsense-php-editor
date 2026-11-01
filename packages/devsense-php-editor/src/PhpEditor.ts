@@ -55,7 +55,7 @@ export class PhpEditor {
 
   /** Start the language server and WebSocket server. Returns the WS port. */
   async start(): Promise<number> {
-    if (this.initialized) return this.getPort();
+    if (this.initialized) return this.getPort()!;
 
     console.log('[PhpEditor] Starting...');
 
@@ -118,7 +118,7 @@ export class PhpEditor {
       this.router!.registerUri(client.id, workspace.rootUri);
       // Tell the client its assigned workspace URI so it can build matching
       // virtual document URIs (fixes diagnostic routing / LS doc recognition).
-      this.ws.sendTo(client.id, {
+      this.ws!.sendTo(client.id, {
         jsonrpc: '2.0',
         method: 'client/workspace',
         params: { clientId: client.id, workspaceUri: workspace.rootUri },

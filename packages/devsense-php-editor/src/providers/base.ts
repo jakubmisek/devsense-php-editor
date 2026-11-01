@@ -12,6 +12,8 @@
 import { Router } from '../server/Router';
 
 export interface MonacoLanguageApi {
+  /** Full monaco namespace may be passed; providers call monaco.languages.register*. */
+  languages?: any;
   registerCompletionItemProvider(selector: any, provider: any): { dispose(): void };
   registerHoverProvider(selector: any, provider: any): { dispose(): void };
   registerSignatureHelpProvider(selector: any, provider: any): { dispose(): void };
@@ -29,6 +31,21 @@ export interface MonacoLanguageApi {
   registerRenameProvider?(selector: any, provider: any): { dispose(): void };
 }
 
+/**
+ * Accept either the raw `monaco-editor` namespace or a flattened object and expose
+ * Range/Position/SymbolKind/InlayHintKind/... at the top level, falling back to
+ * `monaco.languages.*` and `monaco.editor.*`.
+ */
+export function normalizeMonaco(monaco: any): any {
+  if (!monaco) return monaco;
+  return new Proxy(monaco, {
+    get(target, prop) {
+      if (prop in target && target[prop] !== undefined) return target[prop];
+      return target.languages?.[prop] ?? target.editor?.[prop];
+    },
+  });
+}
+
 export abstract class BaseProvider {
   protected readonly router: Router;
   protected readonly languageId: string;
@@ -40,7 +57,7 @@ export abstract class BaseProvider {
     this.router = router;
     this.languageId = languageId;
     this.selector = selector;
-    this.monaco = monaco;
+    this.monaco = normalizeMonaco(monaco ?? (globalThis as any).monaco);
   }
 
   /**
@@ -95,5 +112,19 @@ export abstract class BaseProvider {
       try { d.dispose(); } catch { /* ignore */ }
     }
     this.disposables = [];
+  }
+
+  /** LSP WorkspaceEdit -> Monaco IWorkspaceEdit. */
+  protected toMonacoWorkspaceEdit(edit: any): any {
+    if (!edit) return undefined;
+    const edits: any[] = [];
+    const push = (uri: string, e: any) => edits.push({
+      resource: this.monaco.Uri.parse(uri),
+      textEdit: { range: this.fromLspRange(e.range), text: e.newText },
+      versionId: undefined,
+    });
+    for (const [uri, list] of Object.entries(edit.changes || {})) for (const e of list as any[]) push(uri, e);
+    for (const dc of edit.documentChanges || []) for (const e of dc.edits || []) push(dc.textDocument.uri, e);
+    return { edits };
   }
 }

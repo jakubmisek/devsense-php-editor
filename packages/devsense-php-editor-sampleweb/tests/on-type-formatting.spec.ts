@@ -30,7 +30,7 @@ test.describe('textDocument/onTypeFormatting', () => {
         .then((r) => r.ok)
         .catch(() => false);
     });
-    test.skip(!backendOk, 'LSP backend not responding at /php-editor-port');
+    expect(!backendOk, 'LSP backend not responding at /php-editor-port').toBe(false);
 
     await page.locator('.monaco-editor').click();
     await page.keyboard.press('Control+A');
