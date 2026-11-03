@@ -7,7 +7,7 @@
  * LSP-backed providers and turns `publishDiagnostics` into Monaco markers.
  */
 import * as monaco from 'monaco-editor';
-import type * as lsp from 'vscode-languageserver-protocol';
+import * as lsp from 'vscode-languageserver-protocol';
 import { ensureMonacoWorkers } from './workers';
 import { LspWebSocketClient, type JsonRpcMessage } from './LspWebSocketClient';
 import type { BaseProvider, MonacoApi } from '../providers/base';
@@ -36,7 +36,7 @@ export type PhpEditorConnectionState = 'connecting' | 'connected' | 'disconnecte
 /** A diagnostic for the editor's document (positions are 1-based, Monaco style). */
 export interface PhpEditorDiagnostic {
   uri: string;
-  message: string;
+  message: string|lsp.MarkupContent;
   /** LSP severity: 1 = Error, 2 = Warning, 3 = Information, 4 = Hint. */
   severity: lsp.DiagnosticSeverity;
   startLineNumber: number;
@@ -165,6 +165,7 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
     automaticLayout: true,
     minimap: { enabled: true },
     fontSize: 14,
+    "semanticHighlighting.enabled": true,
     ...options.editorOptions,
   });
   // Placeholder model until the server assigns this client's workspace URI.
@@ -209,7 +210,7 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
             startColumn: d.startColumn,
             endLineNumber: d.endLineNumber,
             endColumn: d.endColumn,
-            message: d.message,
+            message: typeof d.message === 'string' ? d.message : (d.message.value ?? ''),
             severity: toMonacoSeverity(d.severity),
             source: d.source,
             code: d.code,
@@ -246,7 +247,7 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
     }
     for (const dc of edit.documentChanges ?? []) {
       if (!('textDocument' in dc) || dc.textDocument.uri !== documentUri) return { applied: false, failureReason: 'unsupported document change' };
-      edits.push(...dc.edits);
+      edits.push(...dc.edits.filter((e) => lsp.TextEdit.is(e))); // TODO: annotated and snippet text edits
     }
     model.pushEditOperations([], edits.map((e): monaco.editor.IIdentifiedSingleEditOperation => ({
       range: new monaco.Range(e.range.start.line + 1, e.range.start.character + 1, e.range.end.line + 1, e.range.end.character + 1),
@@ -256,7 +257,7 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
     return { applied: true };
   }
 
-  function registerProviders(): void {
+  function registerProviders(capabilities: lsp.ServerCapabilities): void {
     const base = { selector: { language: LANGUAGE_ID }, languageId: LANGUAGE_ID, monaco };
     providers.push(
       new CompletionProvider(client, base),
@@ -269,7 +270,7 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
       new FormattingProvider(client, base),
       new RangeFormattingProvider(client, base),
       new OnTypeFormattingProvider(client, { ...base, autoFormatTriggerCharacters: ['}', ')', ';'] }),
-      new SemanticTokensProvider(client, { ...base, legend: { tokenTypes: [], tokenModifiers: [] } }),
+      new SemanticTokensProvider(client, { ...base, legend: capabilities.semanticTokensProvider?.legend ?? { tokenTypes: [], tokenModifiers: [] } }),
       new InlineCompletionProvider(client, base),
       new InlayHintsProvider(client, base),
       new CodeLensProvider(client, base),
@@ -297,7 +298,7 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
       capabilities: CLIENT_CAPABILITIES,
       initializationOptions: options.initializationOptions ?? {},
     };
-    await client.sendRequest('initialize', initParams);
+    const initResult: lsp.InitializeResult = <lsp.InitializeResult>await client.sendRequest('initialize', initParams);
     client.sendNotification('initialized', {});
 
     const openParams: lsp.DidOpenTextDocumentParams = {
@@ -314,7 +315,7 @@ export function createPhpEditor(container: HTMLElement, options: CreatePhpEditor
       client.sendNotification('textDocument/didChange', changeParams);
     }));
 
-    registerProviders();
+    registerProviders(initResult.capabilities);
     setState('connected');
   }
 
