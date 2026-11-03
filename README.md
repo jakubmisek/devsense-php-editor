@@ -67,7 +67,7 @@ and since 1.0.19497 the editor shows them as-is.
 | `RangeFormattingProvider` | `textDocument/rangeFormatting` |
 | `OnTypeFormattingProvider` | `textDocument/onTypeFormatting` |
 | `SemanticTokensProvider` | `textDocument/semanticTokens/full` |
-| `InlineCompletionProvider` | `textDocument/inlineCompletion` (premium, see [Premium features & licensing](#premium-features--licensing)) |
+| `InlineCompletionProvider` | `textDocument/inlineCompletion` (offered only in special cases, e.g. the class name after `class `) |
 | `InlayHintsProvider` | `textDocument/inlayHint` |
 | `CodeLensProvider` | `textDocument/codeLens` (+ `codeLens/resolve`) |
 | `RenameProvider` | `textDocument/rename` |
@@ -264,7 +264,6 @@ configured:
   runs the server's `devsense:showMessage` command. That command answers with a `window/showMessage`:
   "Code Actions and Quick Fixes are available to licensed users". The editor passes it to `onServerMessage`, and the
   sample shows it as a toast.
-- **Inline completion.** `textDocument/inlineCompletion` returns `null` without a licence.
 - **Other premium features.** See the [devsense-php-ls page](https://www.npmjs.com/package/devsense-php-ls) and the
   [DEVSENSE docs](https://docs.devsense.com/).
 
@@ -313,7 +312,8 @@ edits in two ways, and both work in the browser component:
 The language server resolves command arguments (such as `["Construct","A$6"]`) against the most recent
 `textDocument/codeAction` it answered. So the Router runs `workspace/executeCommand` one at a time across clients.
 Before running a client's command, it replays that client's last code-action request if another client asked more
-recently. Without this, two users running the same action at once got a single edit.
+recently. Without this, two users running the same action at once got a single edit. This is a **temporary
+workaround**: the language server will fix it, and the queue can then be removed.
 
 **Tests.** The licensed Playwright tests run only when `DEVSENSE_PHP_LS_LICENSE` is set in the environment of the
 test run, and the unlicensed `(PREMIUM)` test runs only when it isn't. This means CI without a secret stays green.
@@ -391,20 +391,34 @@ npm run test:unit                   # library unit tests (node:test): licence wi
 `webServer` builds the library and starts PhpEditor + Vite on port 5173 automatically. A single spec:
 `npx playwright test tests/hover.spec.ts` from the sample folder. Artifacts go to `test-results/` and are git-ignored.
 
-## Known server-side limitations
+## Rename and `file:` shadow documents
 
-These tests fail because of `devsense-php-ls` behaviour (checked on 1.0.19497), not the editor:
+Each client's documents live in its own `untitled-workspace-{id}://` workspace, and the language server keeps those
+isolated: one client never sees another client's functions or classes. But devsense-php-ls enables rename only for
+`file:` documents. For any other scheme it answers every rename, even for a local variable, with
+`-32803 Cannot rename a built-in symbol`, and `prepareRename` returns nothing. That was the cause of the earlier rename
+failure.
 
-- **Rename:** `textDocument/rename` answers `-32803 Cannot rename a built-in symbol` for `untitled-workspace-{id}://`
-  documents, even for a local variable in a function. `prepareRename` returns `null`. It works for `file://`. The client
-  already converts the WorkspaceEdit (1 test).
-- **Inline completion:** `textDocument/inlineCompletion` returns `null`, with and without a licence (1 test). See
-  [Premium features & licensing](#premium-features--licensing).
+Opening every document as `file:` is not an option. All `file:` documents form one project, so completion and
+go-to-definition would show other users' code. Instead, for `textDocument/prepareRename` and `textDocument/rename`
+only, the Router briefly opens a `file:///untitled-workspace-{id}/…` copy of the client's document, built from the text
+it tracks from didOpen and didChange. It sends the request against that copy, maps the URIs in the result back to the
+client's `untitled-workspace-{id}://` URI, and closes the copy. Edits for other clients' documents are dropped from
+rename results and from forwarded `workspace/applyEdit` edits (`src/server/uriMap.ts`).
 
-Diagnostics for `untitled-workspace-{id}://` documents work since `devsense-php-ls` 1.0.19497. That version is the
+## Known server-side behaviour
+
+Checked on devsense-php-ls 1.0.19497:
+
+- **Inline completion** is offered only in special cases. After `class ` it suggests a class name derived from the file
+  name, and not for `untitled.php` or `index.php`. The test opens the sample with `?doc=Greeter.php`.
+- **Renaming a built-in** such as `strlen` returns an edit marked "Unsafe refactoring" (`needsConfirmation`) rather
+  than `-32803`. The test accepts either result.
+
+Diagnostics for `untitled-workspace-{id}://` documents work since devsense-php-ls 1.0.19497. That version is the
 minimum this package depends on.
 
-Expected result without a licence: 2 failed (the above), 4 licensed-only tests skipped, the rest pass.
+Expected result without a licence: everything passes, and 4 licensed-only tests are skipped.
 
 ## Project layout
 

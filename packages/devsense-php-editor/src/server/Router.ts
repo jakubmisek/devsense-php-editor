@@ -2,6 +2,7 @@ import type * as lsp from 'vscode-languageserver-protocol';
 import { LspClient, JsonRpcMessage, isJsonRpcMessage } from '../lsp/client';
 import { WsServer, WsClient } from './WsServer';
 import { redactSecrets } from './license';
+import { toLsUris, toClientUris, clientUriToLs, isShadowUri, isVirtualUri, applyContentChanges } from './uriMap';
 
 export interface RouterOptions {
   /** initializationOptions (e.g. { "0": license }) merged into the LS `initialize`. */
@@ -51,7 +52,11 @@ export class Router {
   private readonly options: RouterOptions;
 
   /** LS request id -> originating client + original id. */
-  private pending = new Map<number, { clientId: string; originalId: string | number; method: string }>();
+  private pending = new Map<number, { clientId: string; originalId: string | number; method: string; shadow?: string }>();
+  /** Current text and version of every open client document (to open rename shadows, see uriMap.ts). */
+  private docs = new Map<string, { text: string; version: number }>();
+  /** Open shadow documents: client URI -> number of in-flight requests using it. */
+  private shadows = new Map<string, number>();
   /** Workspace/document URI prefix -> clientId. */
   private uriToClient = new Map<string, string>();
   /** Router-originated requests awaiting responses. */
@@ -105,10 +110,14 @@ export class Router {
       initializationOptions: { ...(this.options.initializationOptions || {}) },
     };
     const result = (await this.request('initialize', params)) as lsp.InitializeResult;
-    this.ls.send({ jsonrpc: '2.0', method: 'initialized', params: {} });
+    this.lsSend({ jsonrpc: '2.0', method: 'initialized', params: {} });
     this.initResult = result;
     console.log('[Router] LS initialized; capabilities cached');
     return result;
+  }
+
+  private lsSend(message: JsonRpcMessage): void {
+    this.ls.send(message);
   }
 
   private sendToClient(clientId: string, message: JsonRpcMessage): void {
@@ -150,7 +159,7 @@ export class Router {
       const fwd = typeof id === 'string' ? this.forwardedLsRequests.get(id) : undefined;
       if (fwd && fwd.clientId === client.id) {
         this.forwardedLsRequests.delete(id as string);
-        this.ls.send(data.error
+        this.lsSend(data.error
           ? { jsonrpc: '2.0', id: fwd.lsId, result: { applied: false, failureReason: data.error.message } }
           : { jsonrpc: '2.0', id: fwd.lsId, result: data.result ?? { applied: false } });
       }
@@ -160,23 +169,57 @@ export class Router {
     // Claim ownership of any document the client touches.
     const uri = (data.params as Partial<lsp.TextDocumentPositionParams> | undefined)?.textDocument?.uri;
     if (uri && method === 'textDocument/didOpen') this.uriToClient.set(uri, client.id);
+    if (uri) this.trackDocument(method, uri, data.params);
 
     const forward = () => {
       if (isRequest) {
         const lsId = this.nextRequestId++;
+        if ((method === 'textDocument/rename' || method === 'textDocument/prepareRename') && uri && this.docs.has(uri) && isVirtualUri(uri)) {
+          this.pending.set(lsId, { clientId: client.id, originalId: id as string | number, method, shadow: uri });
+          this.openShadow(uri);
+          this.lsSend(toLsUris({ ...data, id: lsId }));
+          return;
+        }
         this.pending.set(lsId, { clientId: client.id, originalId: id as string | number, method });
         if (method === 'textDocument/codeAction' || method === 'workspace/executeCommand') {
           this.commandQueue.push({ clientId: client.id, lsId, message: { ...data, id: lsId } });
           this.pumpCommands();
           return;
         }
-        this.ls.send({ ...data, id: lsId });
+        this.lsSend({ ...data, id: lsId });
       } else {
-        this.ls.send(data);
+        this.lsSend(data);
+        // Keep an open shadow in sync while a rename is in flight.
+        if (method === 'textDocument/didChange' && uri && this.shadows.has(uri)) this.lsSend(toLsUris(data));
       }
     };
     // Hold traffic until the real handshake has completed.
     if (this.initResult) forward(); else this.ready.then(forward, () => undefined);
+  }
+
+  private trackDocument(method: string, uri: string, params: unknown): void {
+    const p = params as { textDocument: { text?: string; version?: number }; contentChanges?: Array<{ text: string }> };
+    if (method === 'textDocument/didOpen') this.docs.set(uri, { text: p.textDocument.text ?? '', version: p.textDocument.version ?? 0 });
+    else if (method === 'textDocument/didChange') {
+      const d = this.docs.get(uri);
+      if (d) this.docs.set(uri, { text: applyContentChanges(d.text, (p.contentChanges ?? []) as never), version: p.textDocument.version ?? d.version + 1 });
+    } else if (method === 'textDocument/didClose') this.docs.delete(uri);
+  }
+
+  /** Open (or reuse) the `file:` shadow of a client document for a rename request. */
+  private openShadow(uri: string): void {
+    const n = this.shadows.get(uri) ?? 0;
+    this.shadows.set(uri, n + 1);
+    if (n > 0) return;
+    const d = this.docs.get(uri)!;
+    this.lsSend({ jsonrpc: '2.0', method: 'textDocument/didOpen', params: { textDocument: { uri: clientUriToLs(uri), languageId: 'php', version: d.version, text: d.text } } });
+  }
+
+  private releaseShadow(uri: string): void {
+    const n = (this.shadows.get(uri) ?? 1) - 1;
+    if (n > 0) { this.shadows.set(uri, n); return; }
+    this.shadows.delete(uri);
+    this.lsSend({ jsonrpc: '2.0', method: 'textDocument/didClose', params: { textDocument: { uri: clientUriToLs(uri) } } });
   }
 
   /**
@@ -194,14 +237,14 @@ export class Router {
     if (next.message.method === 'textDocument/codeAction') {
       this.lastCodeAction.set(next.clientId, next.message.params);
       this.lastCodeActionClient = next.clientId;
-      this.ls.send(next.message);
+      this.lsSend(next.message);
       return;
     }
     const replay = this.lastCodeActionClient !== next.clientId ? this.lastCodeAction.get(next.clientId) : undefined;
-    if (replay === undefined) { this.ls.send(next.message); return; }
+    if (replay === undefined) { this.lsSend(next.message); return; }
     this.lastCodeActionClient = next.clientId;
     this.request('textDocument/codeAction', replay).catch(() => undefined).then(() => {
-      if (this.executing?.lsId === next.lsId) this.ls.send(next.message);
+      if (this.executing?.lsId === next.lsId) this.lsSend(next.message);
     });
   }
 
@@ -211,30 +254,35 @@ export class Router {
     for (const [key, fwd] of this.forwardedLsRequests) {
       if (fwd.clientId !== clientId) continue;
       this.forwardedLsRequests.delete(key);
-      this.ls.send({ jsonrpc: '2.0', id: fwd.lsId, result: { applied: false, failureReason: 'client disconnected' } });
+      this.lsSend({ jsonrpc: '2.0', id: fwd.lsId, result: { applied: false, failureReason: 'client disconnected' } });
     }
     for (const [uri, owner] of this.uriToClient) {
       if (owner !== clientId) continue;
-      if (!uri.endsWith('://')) this.ls.send({ jsonrpc: '2.0', method: 'textDocument/didClose', params: { textDocument: { uri } } });
+      this.docs.delete(uri);
+      if (!uri.endsWith('://')) this.lsSend({ jsonrpc: '2.0', method: 'textDocument/didClose', params: { textDocument: { uri } } });
       this.uriToClient.delete(uri);
     }
     for (const [lsId, p] of this.pending) {
       if (p.clientId === clientId) {
         this.pending.delete(lsId);
+        if (p.shadow) this.releaseShadow(p.shadow);
         this.commandQueue = this.commandQueue.filter((c) => c.clientId !== clientId);
         if (this.executing?.lsId === lsId) { this.executing = null; this.pumpCommands(); }
-        this.ls.send({ jsonrpc: '2.0', method: '$/cancelRequest', params: { id: lsId } });
+        this.lsSend({ jsonrpc: '2.0', method: '$/cancelRequest', params: { id: lsId } });
       }
     }
   }
 
   /** A message arrived from the LS. */
-  private handleLsMessage(message: JsonRpcMessage): void {
+  private handleLsMessage(raw: JsonRpcMessage): void {
+    // Diagnostics of a rename shadow duplicate the client document's own; drop them.
+    if (raw.method === 'textDocument/publishDiagnostics' && isShadowUri((raw.params as lsp.PublishDiagnosticsParams | undefined)?.uri ?? '')) return;
+    const message = toClientUris(raw);
 
     // LS -> client request: answer on the server side.
     if (message.method && message.id != null) {
       if (message.method === 'workspace/applyEdit' && this.forwardApplyEdit(message)) return;
-      this.ls.send({ jsonrpc: '2.0', id: message.id, result: this.answerServerRequest(message) });
+      this.lsSend({ jsonrpc: '2.0', id: message.id, result: this.answerServerRequest(message) });
       return;
     }
 
@@ -250,12 +298,16 @@ export class Router {
       const p = typeof message.id === 'number' ? this.pending.get(message.id) : undefined;
       if (p) {
         this.pending.delete(message.id as number);
+        if (p.shadow) this.releaseShadow(p.shadow);
         // Deliver after any window/showMessage the command produced.
         if (this.executing?.lsId === message.id) {
           this.executing = null;
           queueMicrotask(() => this.pumpCommands());
         }
-        this.sendToClient(p.clientId, { ...message, id: p.originalId });
+        const result = p.method === 'textDocument/rename' && message.result
+          ? this.scopeEditToClient(message.result as lsp.WorkspaceEdit, p.clientId)
+          : message.result;
+        this.sendToClient(p.clientId, { ...message, id: p.originalId, ...(message.result !== undefined ? { result } : {}) });
       }
       return;
     }
@@ -286,8 +338,11 @@ export class Router {
    * Returns false when no single owning client exists; the caller then answers `{ applied: false }`.
    */
   private forwardApplyEdit(message: JsonRpcMessage): boolean {
-    const edit = (message.params as lsp.ApplyWorkspaceEditParams | undefined)?.edit;
-    if (!edit) return false;
+    const params = message.params as lsp.ApplyWorkspaceEditParams | undefined;
+    if (!params?.edit) return false;
+    // An edit triggered by a command belongs to the client running it; drop other clients' documents.
+    const edit = this.executing ? this.scopeEditToClient(params.edit, this.executing.clientId) : params.edit;
+    message = { ...message, params: { ...params, edit } };
     const uris = new Set<string>(Object.keys(edit.changes ?? {}));
     for (const dc of edit.documentChanges ?? []) {
       if ('textDocument' in dc) uris.add(dc.textDocument.uri);
@@ -318,6 +373,22 @@ export class Router {
     }
   }
 
+  /**
+   * All clients' documents share one LS project, so global symbols (functions, classes)
+   * resolve across clients and rename returns edits for other clients' documents too.
+   * Keep only the documents the given client owns.
+   */
+  private scopeEditToClient(edit: lsp.WorkspaceEdit, clientId: string): lsp.WorkspaceEdit {
+    const mine = (uri: string) => this.getClientForUri(uri) === clientId;
+    const out: lsp.WorkspaceEdit = { ...edit };
+    if (edit.changes) out.changes = Object.fromEntries(Object.entries(edit.changes).filter(([u]) => mine(u)));
+    if (edit.documentChanges) {
+      out.documentChanges = edit.documentChanges.filter((dc) =>
+        'textDocument' in dc ? mine(dc.textDocument.uri) : 'uri' in dc ? mine(dc.uri) : mine(dc.oldUri));
+    }
+    return out;
+  }
+
   /** Record that a client owns a URI or URI prefix (e.g. its workspace root). */
   registerUri(clientId: string, uri: string): void {
     this.uriToClient.set(uri, clientId);
@@ -337,7 +408,7 @@ export class Router {
     const id = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
-      this.ls.send({ jsonrpc: '2.0', id, method, params });
+      this.lsSend({ jsonrpc: '2.0', id, method, params });
     });
   }
 
