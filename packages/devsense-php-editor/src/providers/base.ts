@@ -10,7 +10,7 @@
  * `monaco.Range` or `monaco.languages.SymbolKind` are read from that object.
  */
 import type * as monaco from 'monaco-editor';
-import type * as lsp from 'vscode-languageserver-protocol';
+import * as lsp from 'vscode-languageserver-protocol';
 
 /** The `monaco-editor` namespace object (what `import * as monaco from 'monaco-editor'` yields). */
 export type MonacoApi = typeof monaco;
@@ -105,8 +105,17 @@ export abstract class BaseProvider {
   protected fromLspWorkspaceEdit(edit: lsp.WorkspaceEdit | null | undefined): monaco.languages.WorkspaceEdit | undefined {
     if (!edit) return undefined;
     const edits: monaco.languages.IWorkspaceTextEdit[] = [];
-    const push = (uri: string, e: lsp.TextEdit | lsp.AnnotatedTextEdit) =>
-      edits.push({ resource: this.monaco.Uri.parse(uri), textEdit: { range: this.fromLspRange(e.range), text: e.newText }, versionId: undefined });
+    const push = (uri: string, e: lsp.TextEdit | lsp.AnnotatedTextEdit | lsp.SnippetTextEdit) =>
+      edits.push(
+        {
+          resource: this.monaco.Uri.parse(uri),
+          textEdit: {
+            range: this.fromLspRange(e.range),
+            insertAsSnippet: lsp.SnippetTextEdit.is(e),
+            text: lsp.SnippetTextEdit.is(e) ? e.snippet.value : e.newText
+          },
+          versionId: undefined
+        });
     for (const [uri, list] of Object.entries(edit.changes ?? {})) for (const e of list) push(uri, e);
     for (const dc of edit.documentChanges ?? []) {
       if ('edits' in dc) for (const e of dc.edits) push(dc.textDocument.uri, e);
