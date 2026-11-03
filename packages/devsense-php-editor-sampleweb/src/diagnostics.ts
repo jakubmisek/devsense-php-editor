@@ -109,8 +109,7 @@ export class DiagnosticsPanel {
       if (!markers.length) continue;
       const group = document.createElement('div');
       group.className = 'diagnostic-group';
-      const uriShort = uri.replace(/^untitled-workspace-[^\/]+\/\//, '');
-      group.innerHTML = `<div class="diagnostic-group-uri">${uriShort}</div>`;
+      group.innerHTML = `<div class="diagnostic-group-uri"></div>`;
       for (const m of markers) {
         const item = document.createElement('div');
         item.className = `diagnostic-item severity-${m.severity}`;
